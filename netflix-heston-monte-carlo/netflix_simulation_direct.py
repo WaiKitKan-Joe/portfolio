@@ -92,9 +92,9 @@ v0 = df['Rolling variance'].iloc[-1]
 
 # simulate
 number_of_step = 252
-date = pd.date_range(
-    start = df.index[-1],
-    periods = number_of_step+1
+date = pd.bdate_range(
+    start=df.index[-1],
+    periods=number_of_step + 1
 )
 length_of_date = len(date)
 number_of_path = 50000
@@ -175,7 +175,7 @@ plt.ylabel('Simulated stock price')
 plt.tight_layout()
 plt.show()
 
-selected_price = '2026-10-25'
+selected_price = '2026-10-23'
 print(f'\nSimulated price on {selected_price}')
 print(stock_df.loc[selected_price])
 
@@ -252,7 +252,7 @@ print(f"\n95% Value at Risk: {var_95_loss:.2%}")
 print(f"Average return in worst 5% of outcomes: "
       f"{expected_shortfall_return:.2%}")
 
-# 33rd percentile ('2026-10-01' to '2026-10-25)
+# 33rd percentile ('2026-10-02' to '2026-10-23)
 
 # Express returns in percentage points
 
@@ -270,13 +270,22 @@ print(f'prob_profit:{prob_profit:.3%}')
 
 
 new_return = new_terminal_price / new_initial_price - 1
-new_return_avg = new_return.mean()
+mean_new_terminal_price = new_terminal_price.mean().round(4)
+new_return_avg = new_return.mean() * 100
 new_return_pct = new_return * 100
+new_median = new_return.median() * 100
+new_median = new_median.round(4)
+mean_new_return = new_return.mean() * 100
+mean_new_return = mean_new_return.round(4)
+
+probability_of_profit_2 = np.mean(new_terminal_price > new_initial_price) * 100
+
 
 # 95VaR
-var_95 = new_return.quantile(0.05)
-shortfall = new_return_pct[new_return_pct < var_95 *100].mean()
-print(f'Expected shortfall: {shortfall:.03f}%')
+var_95 = new_return.quantile(0.05) * 100
+var_95 = var_95.round(4)
+shortfall = new_return_pct[new_return_pct < var_95].mean()
+shortfall = shortfall.round(4)
 
 
 # 33rd and 67th percentiles
@@ -310,9 +319,9 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-print(f'Conservative case: below {return_33:.2f}%')
-print(f'Base case: {return_33:.2f}% to {return_67:.2f}%')
-print(f'Optimistic case: above {return_67:.2f}%')
+print(f'Lower-third scenario: below {return_33:.2f}%')
+print(f'Middle-third scenario: {return_33:.2f}% to {return_67:.2f}%')
+print(f'Upper-third scenario: above {return_67:.2f}%')
 
 # simulated price distribution
 # 33rd and 67th percentiles
@@ -346,6 +355,6 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-print(f'Conservative case: below ${price_33:.2f}')
-print(f'Base case: ${price_33:.2f} to ${price_67:.2f}')
-print(f'Optimistic case: above ${price_67:.2f}')
+print(f'Lower-third scenario: below ${price_33:.2f}')
+print(f'Middle-third scenario: ${price_33:.2f} to ${price_67:.2f}')
+print(f'Upper-third scenario: above ${price_67:.2f}')
