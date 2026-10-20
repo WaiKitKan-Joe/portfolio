@@ -33,6 +33,18 @@ df['Date'] = pd.to_datetime(
 df = df.set_index('Date')
 df = df.sort_index()
 
+# plot stock price movement
+plt.plot(
+    df.index,
+    df['Log return']
+)
+plt.title('Netflix Daily Log Returns: November 3, 2021 to October 2, 2026')
+plt.xlabel('Date')
+plt.ylabel('Log return')
+plt.tight_layout()
+plt.show()
+
+
 # calculate log return
 df['Log close price'] = np.log(df['Close'])
 df['Log return'] = (df['Log close price'] -
