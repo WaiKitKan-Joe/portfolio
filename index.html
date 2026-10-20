@@ -1,1 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
 
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Wai Kit Kan's portfolio of finance, investment analysis, valuation, risk management, and Python projects."
+    >
+
+    <title>Wai Kit Kan | Finance Project Portfolio</title>
+
+    <style>
+        /* =========================
+           General page formatting
+        ========================== */
+
+        * {
+            box-siz*ng: border-box;
+            margin* 0;
+            padding: 0;
+      * }
+
+        html {
+            scr*ll-behavior: smooth;
+        }
+
+  *     body {
+            font-famil*:
+                -apple-system,
+ *              BlinkMacSystemFont,
+*               "Segoe UI",
+       *        Arial,
+                sans-serif;
+
+            background-color: #f4f6f8;
+            color: #1f2937;
+            line-height: 1.6;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        /* =========================
+           Navigation bar
+        ========================== */
+
+        nav {
+            backg*ound-color: #0f172a;
+            p*dding: 16px 8%;
+            displa*: flex;
+            justify-conten*: space-between;
+            align*items: center;
+            positio*: sticky;
+            top: 0;
+    *       z-index: 1000;
+            *ox-shadow: 0 2px 8px rgba(0, 0, 0,*0.15);
+        }
+
+        .nav-nam* {
+            color: #ffffff;
+   *        font-size: 20px;
+         *  font-weight: 700;
+        }
+
+   *    .nav-links {
+            displ*y: flex;
+            gap: 24px;
+  *     }
+
+        .nav-links a {
+            color: #dbeafe;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .nav-links a:hover {
+            color: #60a5fa;
+        }
+
+        /* =========================
+           Main container
+        ========================== */
+
+        .container {
+            width: 90%;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* =========================
+           Hero section
+        ========================== */
+
+        .hero {
+            background:
+                linear-gradient(
+                    135deg,
+                    #0f172a 0%,
+                    #1e3a8a 65%,
+                    #2563eb 100%
+                );
+
+            color: #ffffff;
+            padding: 90px 0;
+        }
+
+        .hero-content {
+            max-width: 820px;
+        }
+
+        .hero-label {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.14);
+            color: #dbeafe;
+            padding: 7px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            line-height: 1.15;
+            margin-bottom: 18px;
+        }
+
+        .hero h2 {
+            color: #bfdbfe;
+            font-size: 23px;
+            font-weight: 500;
+            margin-bottom: 22px;
+        }
+
+        .hero-description {
+            max-width: 750px;
+            color: #e2e8f0;
+            font-size: 18px;
+            margin-bottom: 32px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        /* =========================
+           Buttons
+        ========================== */
+
+        .button {
+            display: inline-block;
+            padding: 12px 20px;
+            border-radius: 7px;
+            font-size: 15px;
+            font-weight: 600;
+            transition:
+                transform 0.2s,
+                background-color 0.2s;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+        }
+
+        .button-primary {
+            background-color: #ffffff;
+            color: #1d4ed8;
+        }
+
+        .button-primary:hover {
+            background-color: #eff6ff;
+        }
+
+        .button-secondary {
+            border: 1px solid #93c5fd;
+            color: #ffffff;
+            background-color: transparent;
+        }
+
+        .button-secondary:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .button-blue {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+
+        .button-blue:hover {
+            background-color: #1d4ed8;
+        }
+
+        .button-outline {
+            border: 1px solid #2563eb;
+            color: #1d4ed8;
+            background-color: #ffffff;
+        }
+
+        .button-outline:hover {
+            background-color: #eff6ff;
+        }
+
+        .button-dark {
+            background-color: #111827;
+            color: #ffffff;
+        }
+
+        .button-dark:hover {
+            background-color: #374151;
+        }
+
+        /* =========================
+           Sections
+        ========================== */
+
+        section {
+            padding: 70px 0;
+        }
+
+        .section-heading {
+            margin-bottom: 34px;
+        }
+
+        .section-heading h2 {
+            color: #0f172a;
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .section-heading p {
+            color: #64748b;
+            font-size: 17px;
+        }
+
+        /* =========================
+           About section
+        ========================== */
+
+        .about {
+            background-color: #ffffff;
+        }
+
+        .about-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 45px;
+            align-items: start;
+        }
+
+        .about-text p {
+            color: #475569;
+            font-size: 17px;
+            margin-bottom: 16px;
+        }
+
+        .skills-box {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 24px;
+        }
+
+        .skills-box h3 {
+            color: #0f172a;
+            margin-bottom: 16px;
+        }
+
+        .skills-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+        }
+
+        .skill {
+            background-color: #dbeafe;
+            color: #1e40af;
+            padding: 7px 11px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* =========================
+           Project section
+        ========================== */
+
+        .projects {
+            background-color: #f4f6f8;
+        }
+
+        .project-card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 6px 22px rgba(15, 23, 42, 0.08);
+            transition:
+                transform 0.25s,
+                box-shadow 0.25s;
+        }
+
+        .project-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.13);
+        }
+
+        .project-header {
+            background:
+                linear-gradient(
+                    135deg,
+                    #111827,
+                    #7f1d1d
+                );
+
+            color: #ffffff;
+            padding: 34px;
+        }
+
+        .project-type {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.15);
+            padding: 6px 11px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .project-header h3 {
+            font-size: 27px;
+            margin-bottom: 10px;
+        }
+
+        .project-header p {
+            color: #fecaca;
+            font-size: 16px;
+        }
+
+        .project-body {
+            padding: 32px;
+        }
+
+        .project-summary {
+            color: #475569;
+            font-size: 16px;
+            margin-bottom: 25px;
+        }
+
+        .project-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 35px;
+            margin-bottom: 26px;
+        }
+
+        .project-column h4 {
+            color: #0f172a;
+            font-size: 17px;
+            margin-bottom: 12px;
+        }
+
+        .project-column ul {
+            padding-left: 20px;
+            color: #475569;
+        }
+
+        .project-column li {
+            margin-bottom: 9px;
+        }
+
+        .technology-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 27px;
+        }
+
+        .technology {
+            background-color: #f1f5f9;
+            color: #334155;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .project-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        /* =========================
+           Contact section
+        ========================== */
+
+        .contact {
+            background-color: #ffffff;
+            text-align: center;
+        }
+
+        .contact-content {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .contact-content h2 {
+            color: #0f172a;
+            font-size: 32px;
+            margin-bottom: 14px;
+        }
+
+        .contact-content p {
+            color: #64748b;
+            font-size: 17px;
+            margin-bottom: 25px;
+        }
+
+        /* =========================
+           Footer
+        ========================== */
+
+        footer {
+            background-color: #0f172a;
+            color: #cbd5e1;
+            text-align: center;
+            padding: 25px;
+            font-size: 14px;
+        }
+
+        /* =========================
+           Responsive layout
+        ========================== */
+
+        @media (max-width: 768px) {
+            nav {
+                padding: 14px 5%;
+            }
+
+            .nav-links {
+                gap: 13px;
+            }
+
+            .nav-links a {
+                font-size: 13px;
+            }
+
+            .hero {
+                padding: 65px 0;
+            }
+
+            .hero h1 {
+                font-size: 36px;
+            }
+
+            .hero h2 {
+                font-size: 20px;
+            }
+
+            .about-content,
+            .project-columns {
+                grid-template-columns: 1fr;
+            }
+
+            .project-columns {
+                gap: 22px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .nav-name {
+                font-size: 16px;
+            }
+
+            .nav-links a:first-child {
+                display: none;
+            }
+
+            .hero h1 {
+                font-size: 31px;
+            }
+
+            .hero-description {
+                font-size: 16px;
+            }
+
+            .project-header,
+            .project-body {
+                padding: 24px;
+            }
+
+            .button {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Navigation bar -->
+    <nav>
+        <div class="nav-name">Wai Kit Kan</div>
+
+        <div class="nav-links">
+            <a href="#about">About</a>
+            <a href="#projects">Projects</a>
+            <a href="#contact">Contact</a>
+            <a
+                href="https://github.com/WaiKitKan-Joe"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero section -->
+    <header class="hero">
+        <div class="container">
+            <div class="hero-content">
+
+                <span class="hero-label">
+                    Finance and Quantitative Project Portfolio
+                </span>
+
+                <h1>Wai Kit Kan</h1>
+
+                <h2>
+                    Finance Graduate | Investment Analysis | Python
+                </h2>
+
+                <p class="hero-description">
+                    A collection of applied finance projects covering
+                    quantitative modelling, investment analysis, valuation,
+                    portfolio management, risk measurement and financial
+                    data analysis.
+                </p>
+
+                <div class="hero-buttons">
+                    <a
+                        class="button button-primary"
+                        href="#projects"
+                    >
+                        View projects
+                    </a>
+
+                    <a
+                        class="button button-secondary"
+                        href="https://github.com/WaiKitKan-Joe"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        Visit GitHub profile
+                    </a>
+                </div>
+
+            </div>
+        </div>
+    </header>
+
+    <!-- About section -->
+    <section class="about" id="about">
+        <div class="container">
+
+            <div class="section-heading">
+                <h2>About Me</h2>
+
+                <p>
+                    Finance, investment and quantitative analysis
+                </p>
+            </div>
+
+            <div class="about-content">
+
+                <div class="about-text">
+                    <p>
+                        I am an HKUST Master of Finance graduate with an
+                        interest in investment analysis, financial markets,
+                        risk management and quantitative modelling.
+                    </p>
+
+       
