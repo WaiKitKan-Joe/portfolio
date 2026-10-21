@@ -29,7 +29,7 @@
 
         html {
             scroll-behavior: smooth;
-            scroll-padding-top: 75px;
+            scroll-padding-top: 80px;
         }
 
         body {
@@ -162,26 +162,38 @@
         }
 
         /* =========================
-           Buttons
+           General buttons
         ========================== */
 
         .button {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
 
-            padding: 12px 20px;
+            min-height: 46px;
+            padding: 11px 18px;
+
             border-radius: 7px;
+            border: 1px solid transparent;
 
             font-size: 15px;
-            font-weight: 600;
+            font-weight: 650;
+
+            cursor: pointer;
 
             transition:
                 transform 0.2s,
                 background-color 0.2s,
-                border-color 0.2s;
+                border-color 0.2s,
+                box-shadow 0.2s;
         }
 
         .button:hover {
             transform: translateY(-2px);
+
+            box-shadow:
+                0 5px 12px rgba(15, 23, 42, 0.15);
         }
 
         .button-primary {
@@ -194,7 +206,7 @@
         }
 
         .button-secondary {
-            border: 1px solid #93c5fd;
+            border-color: #93c5fd;
             color: #ffffff;
             background-color: transparent;
         }
@@ -204,31 +216,37 @@
                 rgba(255, 255, 255, 0.1);
         }
 
-        .button-blue {
+        /* View Report button */
+
+        .button-report {
+            background-color: #ffffff;
+            color: #1d4ed8;
+            border-color: #2563eb;
+        }
+
+        .button-report:hover {
+            background-color: #eff6ff;
+        }
+
+        /* View Code button */
+
+        .button-code {
             background-color: #2563eb;
             color: #ffffff;
         }
 
-        .button-blue:hover {
+        .button-code:hover {
             background-color: #1d4ed8;
         }
 
-        .button-outline {
-            border: 1px solid #2563eb;
-            color: #1d4ed8;
-            background-color: #ffffff;
-        }
+        /* View Folder button */
 
-        .button-outline:hover {
-            background-color: #eff6ff;
-        }
-
-        .button-dark {
+        .button-folder {
             background-color: #111827;
             color: #ffffff;
         }
 
-        .button-dark:hover {
+        .button-folder:hover {
             background-color: #374151;
         }
 
@@ -265,7 +283,11 @@
 
         .about-content {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+
+            grid-template-columns:
+                minmax(0, 2fr)
+                minmax(260px, 1fr);
+
             gap: 45px;
             align-items: start;
         }
@@ -426,7 +448,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin-bottom: 27px;
+            margin-bottom: 26px;
         }
 
         .technology {
@@ -437,16 +459,39 @@
                 1px solid #cbd5e1;
 
             border-radius: 5px;
-
             padding: 6px 10px;
 
             font-size: 13px;
             font-weight: 600;
         }
 
+        /* =========================
+           Project resource area
+        ========================== */
+
+        .project-resources {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 22px;
+        }
+
+        .project-resources h4 {
+            color: #0f172a;
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .resource-description {
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
         .project-buttons {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, minmax(150px, 1fr));
+
             gap: 12px;
         }
 
@@ -492,599 +537,4 @@
 
         /* =========================
            Mobile layout
-        ========================== */
-
-        @media (max-width: 768px) {
-            nav {
-                padding: 14px 5%;
-            }
-
-            .nav-links {
-                gap: 13px;
-            }
-
-            .nav-links a {
-                font-size: 13px;
-            }
-
-            .hero {
-                padding: 65px 0;
-            }
-
-            .hero h1 {
-                font-size: 36px;
-            }
-
-            .hero h2 {
-                font-size: 20px;
-            }
-
-            .about-content,
-            .project-columns {
-                grid-template-columns: 1fr;
-            }
-
-            .project-columns {
-                gap: 22px;
-            }
-        }
-
-        @media (max-width: 520px) {
-            nav {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .nav-name {
-                font-size: 17px;
-            }
-
-            .nav-links {
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-
-            .hero h1 {
-                font-size: 31px;
-            }
-
-            .hero-description {
-                font-size: 16px;
-            }
-
-            .project-header,
-            .project-body {
-                padding: 24px;
-            }
-
-            .button {
-                width: 100%;
-                text-align: center;
-            }
-        }
-    </style>
-</head>
-
-<body>
-
-    <!-- Navigation bar -->
-    <nav>
-        <div class="nav-name">
-            Wai Kit Kan
-        </div>
-
-        <div class="nav-links">
-            <a href="#about">
-                About
-            </a>
-
-            <a href="#projects">
-                Projects
-            </a>
-
-            <a href="#contact">
-                Contact
-            </a>
-
-            <a
-                href="https://github.com/WaiKitKan-Joe"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
-                GitHub
-            </a>
-        </div>
-    </nav>
-
-    <!-- Hero section -->
-    <header class="hero">
-        <div class="container">
-            <div class="hero-content">
-
-                <span class="hero-label">
-                    Finance and Quantitative Project Portfolio
-                </span>
-
-                <h1>
-                    Wai Kit Kan
-                </h1>
-
-                <h2>
-                    Finance Graduate |
-                    Investment Analysis |
-                    Python
-                </h2>
-
-                <p class="hero-description">
-                    A collection of applied finance projects
-                    covering quantitative modelling, fixed
-                    income, investment analysis, risk
-                    measurement and financial forecasting.
-                </p>
-
-                <div class="hero-buttons">
-
-                    <a
-                        class="button button-primary"
-                        href="#projects"
-                    >
-                        View Projects
-                    </a>
-
-                    <a
-                        class="button button-secondary"
-                        href="https://github.com/WaiKitKan-Joe"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        Visit GitHub Profile
-                    </a>
-
-   <div class="container">
-
-            <div class="section-heading">
-                <h2>
-                    About Me
-                </h2>
-
-                <p>
-                    Finance, investment and quantitative analysis
-                </p>
-            </div>
-
-            <div class="about-content">
-
-                <div class="about-text">
-                    <p>
-                        I am an HKUST Master of Finance graduate
-                        with an interest in investment analysis,
-                        financial markets, fixed income, risk
-                        management and quantitative modelling.
-                    </p>
-
-                    <p>
-                        This portfolio demonstrates how I apply
-                        financial theory, Python programming and
-                        data analysis to practical investment and
-                        forecasting problems. Each project includes
-                        supporting code, methodology and written
-                        analysis.
-                    </p>
-                </div>
-
-                <div class="skills-box">
-                    <h3>
-                        Core Skills
-                    </h3>
-
-                    <div class="skills-list">
-                        <span class="skill">
-                            Python
-                        </span>
-
-                        <span class="skill">
-                            Financial Modelling
-                        </span>
-
-                        <span class="skill">
-                            Fixed Income
-                        </span>
-
-                        <span class="skill">
-                            Time-Series Analysis
-                        </span>
-
-                        <span class="skill">
-                            Monte Carlo Simulation
-                        </span>
-
-                        <span class="skill">
-                            Risk Analysis
-                        </span>
-
-                        <span class="skill">
-                            Data Visualisation
-                        </span>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </section>
-
-    <!-- Projects section -->
-    <section class="projects" id="projects">
-        <div class="container">
-
-            <div class="section-heading">
-                <h2>
-                    Selected Projects
-                </h2>
-
-                <p>
-                    Applied finance projects supported by
-                    code, backtesting and written analysis
-                </p>
-            </div>
-
-            <div class="project-grid">
-
-                <!-- =========================
-                     Netflix Heston project
-                ========================== -->
-
-                <article class="project-card">
-
-                    <div class="project-header">
-
-                        <span class="project-type">
-                            Quantitative Finance
-                        </span>
-
-                        <h3>
-                            Netflix Stock-Price Simulation
-                            Using the Heston Model
-                        </h3>
-
-                        <p>
-                            Stochastic volatility modelling
-                            and Monte Carlo simulation
-                        </p>
-
-                    </div>
-
-                    <div class="project-body">
-
-                        <p class="project-summary">
-                            A Heston stochastic-volatility
-                            simulation of Netflix stock prices,
-                            with 50,000 paths, return and
-                            terminal-price distributions,
-                            scenario percentiles, Value at Risk
-                            and Expected Shortfall.
-                        </p>
-
-                        <div class="project-columns">
-
-                            <div class="project-column">
-                                <h4>
-                                    Methodology
-                                </h4>
-
-                                <ul>
-                                    <li>
-                                        Prepared historical Netflix
-                                        closing-price data.
-                                    </li>
-
-                                    <li>
-                                        Estimated stochastic variance
-                                        parameters from rolling
-                                        volatility.
-                                    </li>
-
-                                    <li>
-                                        Simulated correlated price
-                                        and variance processes.
-                                    </li>
-
-                                    <li>
-                                        Evaluated a 10-business-day
-                                        investment horizon.
-                                    </li>
-                                </ul>
-                            </div>
-
-                            <div class="project-column">
-                                <h4>
-                                    Project Outputs
-                                </h4>
-
-                                <ul>
-                                    <li>
-                                        Simulated stock-price paths.
-                                    </li>
-
-                                    <li>
-                                        Terminal-price and return
-                                        distributions.
-                                    </li>
-
-                                    <li>
-                                        Percentile-based scenarios.
-                                    </li>
-
-                                    <li>
-                                        VaR, Expected Shortfall and
-                                        probability-of-profit analysis.
-                                    </li>
-                                </ul>
-                            </div>
-
-                        </div>
-
-                        <div class="technology-list">
-                            <span class="technology">
-                                Python
-                            </span>
-
-                            <span class="technology">
-                                Pandas
-                            </span>
-
-                            <span class="technology">
-                                NumPy
-                            </span>
-
-                            <span class="technology">
-                                Statsmodels
-                            </span>
-
-                            <span class="technology">
-                                Matplotlib
-                            </span>
-
-                            <span class="technology">
-                                Heston Model
-                            </span>
-
-                            <span class="technology">
-                                Monte Carlo Simulation
-                            </span>
-                        </div>
-
-                        <!-- Netflix: Report, Code, Folder -->
-                        <div class="project-buttons">
-
-                            <a
-                                class="button button-outline"
-                                href="https://github.com/WaiKitKan-Joe">
-                                View Report
-                            </a>
-
-                            <a
-                                class="button button-blue"
-                                href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/netflix-heston-monte-carlo/netflix_simulation_direct.py"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                View Code
-                            </a>
-
-                            <a
-                                class="button button-dark"
-                                href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/netflix-heston-monte-carlo"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                View Folder
-                            </a>
-
-                        </div>
-
-                    </div>
-                </article>
-
-                <!-- =========================
-                     U.S. Treasury project
-                ========================== -->
-
-                <article class="project-card">
-
-                    <div class="project-header treasury">
-
-                        <span class="project-type">
-                            Fixed Income and Econometrics
-                        </span>
-
-                        <h3>
-                            U.S. Treasury Yield Forecasting
-                        </h3>
-
-                        <p>
-                            Yield-curve factors, AutoReg modelling
-                            and expanding-window backtesting
-                        </p>
-
-                    </div>
-
-                    <div class="project-body">
-
-                        <p class="project-summary">
-                            A forecasting project for the 10-year
-                            U.S. Treasury yield using DGS10, DGS5,
-                            DGS2 and DGS1MO factors. The project
-                            compares a four-factor OLS model with
-                            AR(10) and an unchanged-yield benchmark
-                            over a 10-observation forecast horizon.
-                        </p>
-
-                        <div class="project-columns">
-
-                            <div class="project-column">
-                                <h4>
-                                    Methodology
-                                </h4>
-
-                                <ul>
-                                    <li>
-                                        Retrieved Treasury yield
-                                        data directly from FRED.
-                                    </li>
-
-                                    <li>
-                                        Estimated a four-factor OLS
-                                        forecasting model.
-                                    </li>
-
-                                    <li>
-                                        Applied Ljung-Box, White and
-                                        HAC diagnostic procedures.
-                                    </li>
-
-                                    <li>
-                                        Backtested OLS and AR(10)
-                                        using expanding estimation
-                                        windows.
-                                    </li>
-                                </ul>
-                            </div>
-
-                            <div class="project-column">
-                                <h4>
-                                    Key Findings
-                                </h4>
-
-                                <ul>
-                                    <li>
-                                        Latest DGS10 forecast:
-                                        5.0322%.
-                                    </li>
-
-                                    <li>
-                                        Estimated 71.12% probability
-                                        that DGS10 exceeds 4.955%.
-                                    </li>
-
-                                    <li>
-                                        Factor-model OOS R²:
-                                        −31.1357%.
-                                    </li>
-
-                                    <li>
-                                        AR(10) OOS R²: −67.0541%;
-                                        the persistence benchmark
-                                        performed best.
-                                    </li>
-                                </ul>
-                            </div>
-
-                        </div>
-
-                        <div class="technology-list">
-                            <span class="technology">
-                                Python
-                            </span>
-
-                            <span class="technology">
-                                FRED
-                            </span>
-
-                            <span class="technology">
-                                Pandas
-                            </span>
-
-                            <span class="technology">
-                                Statsmodels
-                            </span>
-
-                            <span class="technology">
-                                OLS
-                            </span>
-
-                            <span class="technology">
-                                HAC
-                            </span>
-
-                            <span class="technology">
-                                AutoReg
-                            </span>
-
-                            <span class="technology">
-                                Backtesting
-                            </span>
-                        </div>
-
-                        <!-- Treasury: Report, Code, Folder -->
-                        <div class="project-buttons">
-
-                            <a
-                                class="button button-outline"
-                                href="https://github.com/WaiKitKan-Joe">
-                                View Report
-                            </a>
-
-                            <a
-                                class="button button-blue"
-                                href="https://github.com/WaiKitKan-Joe">
-                                View Code
-                            </a>
-
-                            <a
-                                class="button button-dark"
-                                href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/us-treasury-yield-forecasting"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                View Folder
-                            </a>
-
-                        </div>
-
-                    </div>
-                </article>
-
-            </div>
-        </div>
-    </section>
-
-    <!-- Contact section -->
-    <section class="contact" id="contact">
-        <div class="container">
-
-            <div class="contact-content">
-
-                <h2>
-                    Explore My Work
-                </h2>
-
-                <p>
-                    My project files, reports and Python
-                    scripts are available through my
-                    GitHub portfolio.
-                </p>
-
-                <a
-                    class="button button-blue"
-                    href="https://github.com/WaiKitKan-Joe"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >
-                    View GitHub Profile
-                </a>
-
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer>
-        <p>
-            © 2026 Wai Kit Kan.
-            Finance Project Portfolio.
-        </p>
-    </footer>
-
-</body>
-
-</html>
+  
