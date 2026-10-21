@@ -1,1 +1,771 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
+from pathlib import Path
+from scipy.stats import norm, t
+
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error
+)
+
+from statsmodels.stats.diagnostic import (
+    acorr_ljungbox,
+    het_white
+)
+
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+
+
+# Output location
+
+output_path = Path.cwd()
+export_path = Path.cwd()
+
+print(f"Output folder: {output_path}")
+
+
+# Download FRED yield data
+
+today = pd.Timestamp.today().strftime("%Y-%m-%d")
+
+url = (
+    "https://fred.stlouisfed.org/graph/fredgraph.csv?"
+    "id=DGS5,DGS10,DGS2,DGS1MO"
+    "&cosd=1962-01-02,1962-01-02,1976-06-01,2001-07-31"
+    f"&coed={today},{today},{today},{today}"
+)
+
+df = pd.read_csv(url)
+
+print("\nOriginal data:")
+print(df.head())
+print(df.columns)
+
+
+# Clean the data
+
+df.columns = df.columns.str.strip()
+
+df_factor_columns = [
+    "DGS10",
+    "DGS5",
+    "DGS2",
+    "DGS1MO"
+]
+
+df[df_factor_columns] = (
+    df[df_factor_columns]
+    .astype(str)
+    .replace(r"[$,]", "", regex=True)
+    .apply(pd.to_numeric, errors="coerce")
+)
+
+# FRED dates use YYYY-MM-DD
+df["observation_date"] = pd.to_datetime(
+    df["observation_date"],
+    format="%Y-%m-%d",
+    errors="coerce"
+)
+
+df = df.set_index("observation_date")
+df = df.sort_index()
+df = df.dropna()
+
+print("\nCleaned data:")
+print(df.head())
+print(df.tail())
+print(f"Number of observations: {len(df)}")
+
+
+
+# Set the timeline
+start_date = '2024-01-01'
+end_date = df.index[-1]
+
+selected_df = df.loc[
+    start_date:end_date
+].copy()
+
+if selected_df.empty:
+    raise ValueError(
+        "No observations are available in the selected period."
+    )
+
+print(
+    f"\nSelected period: "
+    f"{selected_df.index[0].date()} to "
+    f"{selected_df.index[-1].date()}"
+)
+
+# Plot yield movements
+
+plt.figure(figsize=(8, 5))
+
+plt.plot(
+    selected_df.index,
+    selected_df["DGS10"],
+    label="DGS10"
+)
+
+plt.plot(
+    selected_df.index,
+    selected_df["DGS5"],
+    label="DGS5"
+)
+
+plt.plot(
+    selected_df.index,
+    selected_df["DGS2"],
+    label="DGS2"
+)
+
+plt.plot(
+    selected_df.index,
+    selected_df["DGS1MO"],
+    label="DGS1MO"
+)
+
+plt.title(
+    "Yield Curve Movements: "
+    "DGS10, DGS5, DGS2, and DGS1MO"
+)
+
+plt.xlabel("Date")
+plt.ylabel("Yield (%)")
+plt.legend()
+plt.tight_layout()
+
+yield_curve_file = (
+    export_path / "four_factor_yield_curve.png"
+)
+
+plt.savefig(
+    yield_curve_file,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+
+print(f"\nYield chart saved to: {yield_curve_file.resolve()}")
+
+# Create the forecast horizon for DGS10
+
+forecast_horizon = 10
+
+selected_df["DGS10_ahead"] = (
+    selected_df["DGS10"]
+    .shift(-forecast_horizon)
+)
+
+selected_df["Target date"] = (
+    selected_df.index.to_series()
+    .shift(-forecast_horizon)
+)
+
+cleaned_selected_df = selected_df.dropna(
+    subset=(
+        df_factor_columns
+        + ["DGS10_ahead", "Target date"]
+    )
+).copy()
+
+
+# Fit the OLS factor model
+
+x = sm.add_constant(
+    cleaned_selected_df[df_factor_columns],
+    has_constant="add"
+)
+
+y = cleaned_selected_df["DGS10_ahead"]
+
+factor_model = sm.OLS(y, x).fit()
+
+print("\nStatistical summary of the factor model:")
+print(factor_model.summary())
+
+# Export the factor-model summary
+
+factor_model_table = factor_model.summary2().tables
+
+model_info = factor_model_table[0].copy()
+model_coef = factor_model_table[1].copy()
+
+combined_table = pd.concat(
+    {
+        "Model information": model_info,
+        "Model coefficient": model_coef
+    },
+    axis=0
+)
+
+factor_model_file = (
+    export_path / "factor_model_table.csv"
+)
+
+combined_table.to_csv(factor_model_file)
+
+print(
+    f"\nFactor-model table saved to: "
+    f"{factor_model_file.resolve()}"
+)
+
+# Test residual autocorrelation
+
+ljunbox_test_factor_model = acorr_ljungbox(
+    factor_model.resid,
+    lags=[10],
+    return_df=True
+)
+
+print("\nLjung-Box test for the factor model:")
+print(ljunbox_test_factor_model)
+
+# Test heteroskedasticity
+
+white_test_factor_model = het_white(
+    factor_model.resid,
+    factor_model.model.exog
+)
+
+white_test_labels = [
+    "LM statistic",
+    "LM p-value",
+    "F statistic",
+    "F p-value"
+]
+
+white_test_results = dict(
+    zip(
+        white_test_labels,
+        white_test_factor_model
+    )
+)
+
+print("\nWhite test for heteroskedasticity:")
+
+for key, value in white_test_results.items():
+    print(f"{key}: {value:.6f}")
+
+# HAC adjustment
+
+hac_factor_model = (
+    factor_model.get_robustcov_results(
+        cov_type="HAC",
+        maxlags=20
+    )
+)
+
+print(
+    "\nAdjusted statistical summary "
+    "of the factor model:"
+)
+
+print(hac_factor_model.summary())
+
+# Use the latest yield observations to predict
+
+new_data = selected_df[
+    df_factor_columns
+].iloc[[-1]].copy()
+
+signal_date = new_data.index[0]
+
+# Approximate calendar date, excluding weekends only
+estimated_target_date = (
+    signal_date
+    + pd.offsets.BDay(forecast_horizon)
+)
+
+print("\nFactor values used for prediction:")
+print(new_data)
+
+x_new_data = sm.add_constant(
+    new_data[df_factor_columns],
+    has_constant="add"
+)
+
+x_new_data = x_new_data.reindex(
+    columns=factor_model.model.exog_names,
+    fill_value=1
+)
+
+factor_model_prediction = (
+    factor_model.predict(x_new_data)
+    .round(6)
+    .iloc[0]
+)
+
+print(f"\nSignal date: {signal_date.date()}")
+
+print(
+    f"Estimated date {forecast_horizon} business days later: "
+    f"{estimated_target_date.date()}"
+)
+
+print(
+    f"The factor model predicts DGS10 "
+    f"{forecast_horizon} available observations ahead "
+    f"at {factor_model_prediction:.4f}%."
+)
+
+# Compute the normality-based probability
+
+target_yield = 4.955
+mean = factor_model_prediction
+sd = factor_model.mse_resid ** 0.5
+
+z_score = (
+    target_yield - mean
+) / sd
+
+print("\nNormality-based probability:")
+print("Z-score:", z_score)
+
+prob_below_target = norm.cdf(z_score)
+prob_above_target = 1 - prob_below_target
+
+print(
+    f"P(yield > {target_yield}%): "
+    f"{prob_above_target:.4%}"
+)
+
+print(
+    f"P(yield < {target_yield}%): "
+    f"{prob_below_target:.4%}"
+)
+
+
+# Compute t-distribution probability
+
+error = target_yield - mean
+
+df_t, loc_t, scale_t = t.fit(
+    factor_model.resid
+)
+
+prob_below_target_t = t.cdf(
+    error,
+    df=df_t,
+    loc=loc_t,
+    scale=scale_t
+)
+
+prob_above_target_t = t.sf(
+    error,
+    df=df_t,
+    loc=loc_t,
+    scale=scale_t
+)
+
+print("\nt-distribution probability:")
+
+print(
+    f"P_t(yield > {target_yield}%): "
+    f"{prob_above_target_t:.4%}"
+)
+
+print(
+    f"P_t(yield < {target_yield}%): "
+    f"{prob_below_target_t:.4%}"
+)
+
+
+# Backtest the factor model
+
+backtest_ratio = 0.80
+backtest_df = cleaned_selected_df.copy()
+
+backtest_df_size = len(backtest_df)
+
+start_size = int(
+    backtest_df_size * backtest_ratio
+)
+
+backtest_result = []
+
+for position in range(
+    start_size,
+    backtest_df_size
+):
+
+    signal_date = backtest_df.index[position]
+
+    train_df = backtest_df.loc[
+        backtest_df["Target date"] < signal_date
+    ].copy()
+
+    test_df = backtest_df.iloc[[position]]
+
+    if len(train_df) <= len(df_factor_columns) + 1:
+        continue
+
+    x_train = sm.add_constant(
+        train_df[df_factor_columns],
+        has_constant="add"
+    )
+
+    y_train = train_df["DGS10_ahead"]
+
+    model_trained = sm.OLS(
+        y_train,
+        x_train
+    ).fit()
+
+    x_test = sm.add_constant(
+        test_df[df_factor_columns],
+        has_constant="add"
+    )
+
+    x_test = x_test.reindex(
+        columns=model_trained.model.exog_names,
+        fill_value=1
+    )
+
+    predicted_dgs10 = (
+        model_trained.predict(x_test)
+        .iloc[0]
+    )
+
+    backtest_result.append(
+        {
+            "Signal date": signal_date,
+            "Target date": test_df[
+                "Target date"
+            ].iloc[0],
+            "Predicted DGS10": predicted_dgs10,
+            "Target DGS10": test_df[
+                "DGS10_ahead"
+            ].iloc[0],
+            "Target - predicted": (
+                test_df["DGS10_ahead"].iloc[0]
+                - predicted_dgs10
+            ),
+            "Benchmark DGS10": test_df[
+                "DGS10"
+            ].iloc[0]
+        }
+    )
+
+backtest_result_df = pd.DataFrame(
+    backtest_result
+)
+
+if backtest_result_df.empty:
+    raise ValueError(
+        "The factor-model backtest produced no results."
+    )
+
+backtest_result_df = (
+    backtest_result_df
+    .set_index("Signal date")
+)
+
+print("\nFactor-model backtest results:")
+print(backtest_result_df)
+
+
+# Evaluate the factor-model backtest
+
+
+actual = backtest_result_df["Target DGS10"]
+
+benchmark = backtest_result_df[
+    "Benchmark DGS10"
+]
+
+predicted = backtest_result_df[
+    "Predicted DGS10"
+]
+
+avp_mae = mean_absolute_error(
+    actual,
+    predicted
+)
+
+avp_rmse = np.sqrt(
+    mean_squared_error(
+        actual,
+        predicted
+    )
+)
+
+# Actual versus benchmark
+avb_mae = mean_absolute_error(
+    actual,
+    benchmark
+)
+
+avb_rmse = np.sqrt(
+    mean_squared_error(
+        actual,
+        benchmark
+    )
+)
+
+# Benchmark-relative out-of-sample R-squared
+oos_r2 = 1 - (
+    mean_squared_error(
+        actual,
+        predicted
+    )
+    / mean_squared_error(
+        actual,
+        benchmark
+    )
+)
+
+print("\nBacktest evaluation of the factor model:")
+print(f"Model MAE: {avp_mae:.6f}")
+print(f"Model RMSE: {avp_rmse:.6f}")
+print(f"Benchmark MAE: {avb_mae:.6f}")
+print(f"Benchmark RMSE: {avb_rmse:.6f}")
+
+print(
+    f"Benchmark-relative out-of-sample "
+    f"R-squared: {oos_r2:.4%}"
+)
+
+# Plot DGS10 autocorrelation
+
+plot_acf(
+    cleaned_selected_df["DGS10"],
+    lags=10,
+    alpha=0.05
+)
+
+plt.title("Autocorrelation of DGS10")
+plt.xlabel("Lag")
+plt.ylabel("Autocorrelation")
+plt.tight_layout()
+
+acf_file = (
+    output_path / "autocorrelation_DGS10.png"
+)
+
+plt.savefig(
+    acf_file,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+
+print(
+    f"\nAutocorrelation chart saved to: "
+    f"{acf_file.resolve()}"
+)
+
+# Select the AR order
+
+# Retain dates separately for the backtest
+dgs10_dates = selected_df[
+    "DGS10"
+].dropna().index
+
+# Use an integer index for AutoReg
+dgs10 = (
+    selected_df["DGS10"]
+    .dropna()
+    .reset_index(drop=True)
+)
+
+lag_selection_aic = ar_select_order(
+    dgs10,
+    maxlag=10,
+    ic="aic",
+    trend="c"
+)
+
+print("\nAIC-selected lags:")
+print(lag_selection_aic.ar_lags)
+
+lag_selection_bic = ar_select_order(
+    dgs10,
+    maxlag=10,
+    ic="bic",
+    trend="c"
+)
+
+print("\nBIC-selected lags:")
+print(lag_selection_bic.ar_lags)
+
+
+# Fit the AutoReg model
+
+# Keep your original AR(10) specification
+selected_lag = 10
+
+ar_model = AutoReg(
+    dgs10,
+    lags=selected_lag,
+    trend="c"
+).fit()
+
+print("\nStatistical summary of the AR model:")
+print(ar_model.summary())
+
+ar_model_forecast = ar_model.forecast(
+    steps=forecast_horizon
+)
+
+print("\nAR model forecast:")
+print(ar_model_forecast)
+
+
+# Test AR residual correlation
+
+ljunbox_test_ar_model = acorr_ljungbox(
+    ar_model.resid,
+    lags=[10],
+    return_df=True
+)
+
+print("\nLjung-Box test for the AR model:")
+print(ljunbox_test_ar_model)
+
+
+# Backtest the AutoReg model
+
+data_size_ar = len(dgs10)
+
+ar_start_position = int(
+    data_size_ar * backtest_ratio
+)
+
+backtest_result_ar = []
+
+for position_ar in range(
+    ar_start_position,
+    data_size_ar - forecast_horizon
+):
+
+    training_series = dgs10.iloc[
+        :position_ar + 1
+    ]
+
+    backtest_ar_model = AutoReg(
+        training_series,
+        lags=selected_lag,
+        trend="c"
+    ).fit()
+
+    forecast_ar = (
+        backtest_ar_model.forecast(
+            steps=forecast_horizon
+        )
+        .iloc[-1]
+    )
+
+    target_position = (
+        position_ar + forecast_horizon
+    )
+
+    signal_date_ar = dgs10_dates[position_ar]
+    target_date_ar = dgs10_dates[target_position]
+
+    backtest_result_ar.append(
+        {
+            "Signal date": signal_date_ar,
+            "Target date": target_date_ar,
+            "Benchmark DGS10": dgs10.iloc[
+                position_ar
+            ],
+            "Predicted DGS10": forecast_ar,
+            "Actual DGS10": dgs10.iloc[
+                target_position
+            ]
+        }
+    )
+
+backtest_result_ar_df = pd.DataFrame(
+    backtest_result_ar
+)
+
+if backtest_result_ar_df.empty:
+    raise ValueError(
+        "The AR-model backtest produced no results."
+    )
+
+backtest_result_ar_df = (
+    backtest_result_ar_df
+    .set_index("Signal date")
+)
+
+print("\nAR backtest results:")
+print(backtest_result_ar_df)
+
+
+# Evaluate the AutoReg backtest
+
+actual_ar = backtest_result_ar_df[
+    "Actual DGS10"
+]
+
+predicted_ar = backtest_result_ar_df[
+    "Predicted DGS10"
+]
+
+benchmark_ar = backtest_result_ar_df[
+    "Benchmark DGS10"
+]
+
+# Actual versus predicted
+avp_mae_ar = mean_absolute_error(
+    actual_ar,
+    predicted_ar
+)
+
+avp_rmse_ar = np.sqrt(
+    mean_squared_error(
+        actual_ar,
+        predicted_ar
+    )
+)
+
+# Actual versus benchmark
+avb_mae_ar = mean_absolute_error(
+    actual_ar,
+    benchmark_ar
+)
+
+avb_rmse_ar = np.sqrt(
+    mean_squared_error(
+        actual_ar,
+        benchmark_ar
+    )
+)
+
+# Benchmark-relative out-of-sample R-squared
+oos_r2_ar = 1 - (
+    mean_squared_error(
+        actual_ar,
+        predicted_ar
+    )
+    / mean_squared_error(
+        actual_ar,
+        benchmark_ar
+    )
+)
+
+print(
+    f"\nBacktest evaluation of the "
+    f"AR({selected_lag}) model:"
+)
+
+print(f"Model MAE: {avp_mae_ar:.6f}")
+print(f"Model RMSE: {avp_rmse_ar:.6f}")
+print(f"Benchmark MAE: {avb_mae_ar:.6f}")
+print(f"Benchmark RMSE: {avb_rmse_ar:.6f}")
+
+print(
+    f"Benchmark-relative out-of-sample "
+    f"R-squared: {oos_r2_ar:.4%}"
+)
