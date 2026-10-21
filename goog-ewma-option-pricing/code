@@ -1,1 +1,495 @@
+import numpy as np
+import pandas as pd
+import requests
 
+from pathlib import Path
+
+ticker = "GOOG"
+
+from_date = "2021-10-21"
+
+today = (
+    pd.Timestamp.today()
+    .strftime("%Y-%m-%d")
+)
+
+url = (
+    f"https://api.nasdaq.com/api/quote/{ticker}/historical?"
+    f"assetclass=stocks"
+    f"&fromdate={from_date}"
+    f"&limit=9999"
+    f"&todate={today}"
+    f"&random=12"
+)
+
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/155.0.0.0 "
+        "Safari/537.36"
+    ),
+    "Accept": (
+        "application/json, "
+        "text/plain, "
+        "*/*"
+    ),
+    "Origin": "https://www.nasdaq.com",
+    "Referer": "https://www.nasdaq.com/"
+}
+
+response = requests.get(
+    url,
+    headers=headers,
+    timeout=30
+)
+
+response.raise_for_status()
+
+data = response.json()
+
+
+if data.get("data") is None:
+    raise ValueError(
+        "Nasdaq returned no historical data."
+    )
+
+trades_table = data["data"].get(
+    "tradesTable"
+)
+
+if trades_table is None:
+    raise ValueError(
+        "The Nasdaq response does not contain "
+        "a historical trades table."
+    )
+
+rows = trades_table.get("rows")
+
+if not rows:
+    raise ValueError(
+        "Nasdaq returned no historical price rows."
+    )
+
+google = pd.DataFrame(rows)
+
+print("\nOriginal Nasdaq data:")
+print(google.head())
+
+print("\nOriginal columns:")
+print(google.columns.tolist())
+
+
+google.columns = (
+    google.columns
+    .str.strip()
+)
+
+# Rename API columns to match the names used in your original code
+google = google.rename(
+    columns={
+        "date": "Date",
+        "close": "Close/Last",
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "volume": "Volume"
+    }
+)
+
+required_columns = [
+    "Date",
+    "Close/Last"
+]
+
+missing_columns = [
+    column
+    for column in required_columns
+    if column not in google.columns
+]
+
+if missing_columns:
+    raise KeyError(
+        f"Missing required columns: {missing_columns}"
+    )
+
+
+# Convert the date column
+google["Date"] = pd.to_datetime(
+    google["Date"],
+    format="%m/%d/%Y",
+    errors="coerce"
+)
+
+
+# Convert price columns into numeric values
+price_columns = [
+    "Close/Last",
+    "Open",
+    "High",
+    "Low"
+]
+
+for column in price_columns:
+
+    if column in google.columns:
+
+        google[column] = pd.to_numeric(
+            google[column]
+            .astype(str)
+            .str.replace(
+                "$",
+                "",
+                regex=False
+            )
+            .str.replace(
+                ",",
+                "",
+                regex=False
+            ),
+            errors="coerce"
+        )
+
+
+# Convert volume into a numeric value
+if "Volume" in google.columns:
+
+    google["Volume"] = pd.to_numeric(
+        google["Volume"]
+        .astype(str)
+        .str.replace(
+            ",",
+            "",
+            regex=False
+        ),
+        errors="coerce"
+    )
+
+
+# Remove rows with invalid dates or closing prices
+google = google.dropna(
+    subset=[
+        "Date",
+        "Close/Last"
+    ]
+)
+
+# Remove invalid non-positive stock prices
+google = google.loc[
+    google["Close/Last"] > 0
+].copy()
+
+google = google.set_index("Date")
+
+google = google.sort_index()
+
+
+print("\nCleaned Google stock data:")
+print(google.head())
+
+print("\nLatest observations:")
+print(google.tail())
+
+print(
+    f"\nHistorical period: "
+    f"{google.index[0].date()} to "
+    f"{google.index[-1].date()}"
+)
+
+print(
+    f"Number of observations: "
+    f"{len(google)}"
+)
+
+
+spot_price = google[
+    "Close/Last"
+].iloc[-1]
+
+print(
+    f"\nLatest GOOG spot price: "
+    f"${spot_price:.2f}"
+)
+
+
+
+google["log return"] = np.log(
+    google["Close/Last"]
+    / google["Close/Last"].shift(1)
+)
+
+daily_volatility_historical = (
+    google["log return"]
+    .std()
+)
+
+annualized_volatility_historical = (
+    daily_volatility_historical
+    * np.sqrt(252)
+)
+
+print(
+    "\nHistorical annualized volatility:",
+    annualized_volatility_historical
+)
+
+print(
+    f"Historical annualized volatility: "
+    f"{annualized_volatility_historical:.4%}"
+)
+
+
+decay_factor = 0.94
+
+google["EWMA variance"] = (
+    google["log return"]
+    .pow(2)
+    .ewm(
+        alpha=1 - decay_factor,
+        adjust=False
+    )
+    .mean()
+)
+
+google["EWMA_daily_volatility"] = np.sqrt(
+    google["EWMA variance"]
+)
+
+google["EWMA_annualized_volatility"] = (
+    google["EWMA_daily_volatility"]
+    * np.sqrt(252)
+)
+
+latest_EWMA_annualized_volatility = (
+    google["EWMA_annualized_volatility"]
+    .iloc[-1]
+)
+
+print(
+    "\nLatest EWMA annualized volatility:",
+    latest_EWMA_annualized_volatility
+)
+
+print(
+    f"Latest EWMA annualized volatility: "
+    f"{latest_EWMA_annualized_volatility:.4%}"
+)
+
+
+output_path = Path(
+    "EWMA_Volatility.xlsx"
+)
+
+google.to_excel(
+    output_path,
+    sheet_name="EWMA Volatility",
+    index=True
+)
+
+print(
+    f"\nEWMA results saved to: "
+    f"{output_path.resolve()}"
+)
+
+
+def binomial_tree_price(
+    isEuropean,
+    isCall,
+    S,
+    K,
+    r,
+    q,
+    T,
+    sig,
+    n
+):
+
+    dt = T / n
+
+    u = np.exp(
+        sig * np.sqrt(dt)
+    )
+
+    d = 1 / u
+
+    p = (
+        np.exp((r - q) * dt) - d
+    ) / (u - d)
+
+    discount = np.exp(
+        -r * dt
+    )
+
+    if not 0 <= p <= 1:
+        raise ValueError(
+            f"Invalid risk-neutral probability: {p:.6f}. "
+            "Increase the number of tree steps or "
+            "check the model inputs."
+        )
+
+    j = np.arange(n + 1)
+
+    ST = (
+        S
+        * (u ** j)
+        * (d ** (n - j))
+    )
+
+    if isCall:
+
+        option_values = np.maximum(
+            ST - K,
+            0
+        )
+
+    else:
+
+        option_values = np.maximum(
+            K - ST,
+            0
+        )
+
+    for step in range(
+        n - 1,
+        -1,
+        -1
+    ):
+
+        option_values = discount * (
+            p
+            * option_values[
+                1:step + 2
+            ]
+            + (1 - p)
+            * option_values[
+                0:step + 1
+            ]
+        )
+
+        if not isEuropean:
+
+            j = np.arange(
+                step + 1
+            )
+
+            S_step = (
+                S
+                * (u ** j)
+                * (d ** (step - j))
+            )
+
+            if isCall:
+
+                exercise_values = np.maximum(
+                    S_step - K,
+                    0
+                )
+
+            else:
+
+                exercise_values = np.maximum(
+                    K - S_step,
+                    0
+                )
+
+            option_values = np.maximum(
+                option_values,
+                exercise_values
+            )
+
+    return option_values[0]
+
+
+S = spot_price
+
+K = 225.00
+
+# Continuously compounded risk-free rate
+r = np.log(
+    1 + 0.039
+)
+
+# Your original annual dividend-yield assumption:
+# four quarterly dividends of $0.22 each
+annual_dividend = 4 * 0.22
+
+q = np.log(
+    1
+    + annual_dividend / spot_price
+)
+
+# 84 calendar days to expiration
+T = 84 / 365
+
+# Use the latest annualized EWMA volatility
+sig = (
+    latest_EWMA_annualized_volatility
+)
+
+number_of_steps = 100
+
+
+option_price = binomial_tree_price(
+    isEuropean=False,
+    isCall=True,
+    S=S,
+    K=K,
+    r=r,
+    q=q,
+    T=T,
+    sig=sig,
+    n=number_of_steps
+)
+
+print("\nOption-pricing inputs:")
+
+print(
+    f"Underlying ticker: {ticker}"
+)
+
+print(
+    f"Valuation date: "
+    f"{google.index[-1].date()}"
+)
+
+print(
+    f"Spot price: "
+    f"${S:.2f}"
+)
+
+print(
+    f"Strike price: "
+    f"${K:.2f}"
+)
+
+print(
+    f"Risk-free rate: "
+    f"{r:.4%}"
+)
+
+print(
+    f"Dividend yield: "
+    f"{q:.4%}"
+)
+
+print(
+    f"Time to maturity: "
+    f"{T:.6f} years"
+)
+
+print(
+    f"EWMA annualized volatility: "
+    f"{sig:.4%}"
+)
+
+print(
+    f"Number of tree steps: "
+    f"{number_of_steps}"
+)
+
+print(
+    f"\nAmerican call-option price: "
+    f"${option_price:.4f}"
+)
