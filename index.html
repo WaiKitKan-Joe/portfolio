@@ -11,7 +11,7 @@
 
     <meta
         name="description"
-        content="Wai Kit Kan's finance and quantitative project portfolio, featuring quantitative finance, fixed-income forecasting, derivative valuation, risk analysis, DCF valuation and Python projects."
+        content="Wai Kit Kan's finance and quantitative project portfolio, featuring quantitative finance, fixed-income forecasting, derivative valuation, DCF analysis, machine learning, risk analysis and Python projects."
     >
 
     <title>Wai Kit Kan | Finance Project Portfolio</title>
@@ -377,6 +377,15 @@
                 );
         }
 
+        .project-header.clustering {
+            background:
+                linear-gradient(
+                    135deg,
+                    #0f766e,
+                    #14b8a6
+                );
+        }
+
         .project-type {
             display: inline-block;
 
@@ -652,8 +661,9 @@
                 <p class="hero-description">
                     A collection of applied finance projects covering
                     quantitative modelling, fixed income, derivative
-                    valuation, investment analysis, risk measurement,
-                    enterprise valuation and financial forecasting.
+                    valuation, investment analysis, machine learning,
+                    risk measurement, enterprise valuation and
+                    financial forecasting.
                 </p>
 
                 <div class="hero-buttons">
@@ -707,12 +717,12 @@
 
                     <p>
                         This portfolio demonstrates how I apply
-                        financial theory, Python programming and
-                        data analysis to practical investment,
-                        derivative-valuation, forecasting and
-                        corporate-valuation problems. Each project
-                        includes supporting code, methodology and
-                        written analysis.
+                        financial theory, Python programming,
+                        machine learning and data analysis to
+                        practical investment, derivative-valuation,
+                        forecasting and corporate-valuation problems.
+                        Each project includes supporting code,
+                        methodology and written analysis.
                     </p>
                 </div>
 
@@ -741,6 +751,10 @@
 
                         <span class="skill">
                             Derivative Valuation
+                        </span>
+
+                        <span class="skill">
+                            Machine Learning
                         </span>
 
                         <span class="skill">
@@ -778,7 +792,8 @@
 
                 <p>
                     Applied finance projects supported by code,
-                    backtesting, simulation and written analysis
+                    backtesting, simulation, machine learning
+                    and written analysis
                 </p>
             </div>
 
@@ -808,7 +823,9 @@
 
                     <div class="project-body">
 
-                        <p class="project00
+                        <p class="project-summary">
+                            A Heston stochastic-volatility simulation
+                            of Netflix stock prices using 50,000
                             simulated paths. The analysis evaluates
                             terminal prices, holding-period returns,
                             probability of profit, Value at Risk and
@@ -880,10 +897,7 @@
                             <span class="technology">Pandas</span>
                             <span class="technology">NumPy</span>
                             <span class="technology">Statsmodels</span>
-                            <span class="technology">Matplotlib</span>
-                            <span class="technology">Heston Model</span>
-
-                            <span class="technology">
+                              <span class="technology">
                                 Monte Carlo Simulation
                             </span>
                         </div>
@@ -1089,7 +1103,7 @@
                     </div>
                 </article>
 
-                <!-- GOOG EWMA option-pricing project -->
+                <!-- GOOG EWMA project -->
 
                 <article class="project-card">
 
@@ -1412,6 +1426,186 @@
                                 <a
                                     class="button button-folder"
                                     href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/DCF%20%26MCS"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Folder
+                                </a>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+                </article>
+
+                <!-- Technology clustering project -->
+
+                <article class="project-card">
+
+                    <div class="project-header clustering">
+
+                        <span class="project-type">
+                            Machine Learning and Investment Analysis
+                        </span>
+
+                        <h3>
+                            Global Technology Companies
+                            K-Means Clustering
+                        </h3>
+
+                        <p>
+                            Financial peer segmentation using
+                            fundamentals, valuation, risk and momentum
+                        </p>
+
+                    </div>
+
+                    <div class="project-body">
+
+                        <p class="project-summary">
+                            An unsupervised-learning project that
+                            groups global technology companies into
+                            financially similar peer segments. The
+                            analysis winsorises extreme observations,
+                            standardises seven financial features,
+                            evaluates alternative cluster counts using
+                            silhouette scores, and interprets the final
+                            five-cluster solution for investment
+                            screening and peer analysis.
+                        </p>
+
+                        <div class="project-columns">
+
+                            <div class="project-column">
+                                <h4>
+                                    Methodology
+                                </h4>
+
+                                <ul>
+                                    <li>
+                                        Downloaded the 2026 global
+                                        technology fundamentals
+                                        dataset through the Kaggle API.
+                                    </li>
+
+                                    <li>
+                                        Selected company size,
+                                        R&amp;D intensity, operating
+                                        margin, trailing and forward
+                                        P/E, beta and 52-week momentum.
+                                    </li>
+
+                                    <li>
+                                        Clipped observations at the
+                                        1st and 99th percentiles and
+                                        standardised all features.
+                                    </li>
+
+                                    <li>
+                                        Tested K-Means solutions from
+                                        k = 2 to 15 using silhouette
+                                        scores.
+                                    </li>
+
+                                    <li>
+                                        Generated company assignments
+                                        and cluster-level standardised
+                                        profiles.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="project-column">
+                                <h4>
+                                    Key Results
+                                </h4>
+
+                                <ul>
+                                    <li>
+                                        Selected five clusters with
+                                        the highest silhouette score
+                                        of 0.353.
+                                    </li>
+
+                                    <li>
+                                        Identified mega-cap profitable
+                                        leaders with market-cap and
+                                        margin scores of +3.17 and
+                                        +1.17.
+                                    </li>
+
+                                    <li>
+                                        Separated high-momentum,
+                                        higher-risk companies with
+                                        momentum of +2.03 and beta
+                                        of +1.08.
+                                    </li>
+
+                                    <li>
+                                        Identified R&amp;D-intensive,
+                                        low-profitability companies
+                                        with R&amp;D of +0.88 and
+                                        margin of -1.67.
+                                    </li>
+
+                                    <li>
+                                        Isolated expensive, high-beta
+                                        innovation companies with
+                                        trailing P/E of +3.18 and
+                                        beta of +1.14.
+                                    </li>
+                                </ul>
+                            </div>
+
+                        </div>
+
+                        <div class="technology-list">
+                            <span class="technology">Python</span>
+                            <span class="technology">Pandas</span>
+                            <span class="technology">scikit-learn</span>
+                            <span class="technology">K-Means</span>
+                            <span class="technology">StandardScaler</span>
+                            <span class="technology">Silhouette Score</span>
+                            <span class="technology">Seaborn</span>
+                            <span class="technology">Machine Learning</span>
+                        </div>
+
+                        <div class="project-resources">
+
+                            <h4>
+                                Project Resources
+                            </h4>
+
+                            <p class="resource-description">
+                                Read the full clustering report,
+                                inspect the Python code, or browse
+                                the complete project folder.
+                            </p>
+
+                            <div class="project-buttons">
+
+                                <a
+                                    class="button button-report"
+                                    href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/clustering/Global_Tech_Companies_KMeans_Clustering_Report.pdf"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Report
+                                </a>
+
+                                <a
+                                    class="button button-code"
+                                    href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/clustering/code"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Code
+                                </a>
+
+                                <a
+                                    class="button button-folder"
+                                    href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/clustering"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
