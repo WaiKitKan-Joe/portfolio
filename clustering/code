@@ -1,1 +1,216 @@
+import seaborn as sns
+import pandas as pd
 
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
+
+import matplotlib.pyplot as plt
+
+import requests
+import zipfile
+import io
+from pathlib import Path
+
+
+dataset_url = (
+    "https://www.kaggle.com/api/v1/datasets/download/"
+    "kanchana1990/global-tech-giants-fundamentals-and-valuations-2026"
+)
+
+response = requests.get(dataset_url, timeout=60)
+response.raise_for_status()
+
+with zipfile.ZipFile(io.BytesIO(response.content)) as zip_file:
+
+    csv_files = [
+        file_name
+        for file_name in zip_file.namelist()
+        if file_name.lower().endswith(".csv")
+    ]
+
+    if not csv_files:
+        raise FileNotFoundError(
+            "No CSV file was found inside the downloaded dataset."
+        )
+
+    print("CSV files found:", csv_files)
+
+    with zip_file.open(csv_files[0]) as csv_file:
+        df = pd.read_csv(csv_file)
+
+
+# Save output files in the same folder where the script is run
+output_path = Path.cwd()
+
+print(f"\nOutput folder: {output_path}")
+
+
+features = [
+    "Market_Cap_B",               # company size
+    "R&D_to_Revenue_Pct",         # innovation
+    "Operating_Margin_Pct",       # profitability
+    "Trailing_PE",                # valuation
+    "Forward_PE",                 # future valuation
+    "Beta_Volatility",            # market risk
+    "52_Week_Change_Pct"          # price momentum
+]
+
+target_df = df[features].copy()
+
+
+for x in target_df.columns:
+
+    upper_limit = target_df[x].quantile(0.99)
+    lower_limit = target_df[x].quantile(0.01)
+
+    target_df[x] = target_df[x].clip(
+        lower=lower_limit,
+        upper=upper_limit
+    )
+
+
+scale = StandardScaler()
+
+target_scaled = scale.fit_transform(target_df)
+
+target_scaled_df = pd.DataFrame(
+    target_scaled,
+    columns=target_df.columns
+)
+
+check_isna = target_scaled_df.isna().sum()
+
+print(f"\nCheck NA:\n{check_isna}")
+
+silhouette_score_list = []
+
+cluster_range = range(2, 16)
+
+for k in cluster_range:
+
+    model = KMeans(
+        n_clusters=k,
+        n_init=15,
+        random_state=41
+    )
+
+    label = model.fit_predict(target_scaled_df)
+
+    score = silhouette_score(
+        target_scaled_df,
+        label
+    )
+
+    silhouette_score_list.append(score)
+
+
+silhouette_score_df = pd.DataFrame({
+    "Number of clusters": list(cluster_range),
+    "Silhouette Score": silhouette_score_list
+}).set_index("Number of clusters")
+
+
+best_k = silhouette_score_df[
+    "Silhouette Score"
+].idxmax()
+
+highest_score = silhouette_score_df[
+    "Silhouette Score"
+].max()
+
+
+print("\n")
+print(f"Best k: {best_k}")
+print(f"Best score: {highest_score:.3f}")
+
+
+final_model = KMeans(
+    n_clusters=best_k,
+    n_init=15,
+    random_state=41
+)
+
+cluster_label = final_model.fit_predict(
+    target_scaled_df
+)
+
+target_scaled_df["Cluster"] = cluster_label
+
+df["Cluster"] = cluster_label
+
+
+company_cluster_result = df[
+    [
+        "Ticker",
+        "Company_Name",
+        "Industry",
+        "Cluster"
+    ]
+].sort_values(
+    by=["Cluster"]
+)
+
+
+# Save company clustering results in the script folder
+
+company_cluster_result.to_csv(
+    output_path / "company_cluster_result.csv",
+    index=False
+)
+
+
+cluster_profile = (
+    target_scaled_df
+    .groupby("Cluster")[features]
+    .mean()
+    .round(4)
+)
+
+
+# Save cluster profile in the script folder
+
+cluster_profile.to_csv(
+    output_path / "cluster_profile.csv"
+)
+
+
+# Save silhouette scores in the script folder
+
+silhouette_score_df.to_csv(
+    output_path / "silhouette_scores.csv"
+)
+
+
+plt.figure(figsize=(12, 5))
+
+sns.heatmap(
+    cluster_profile,
+    annot=True,
+    center=0,
+    cmap="coolwarm",
+    fmt=".2f"
+)
+
+plt.title("Standardized Financial Profile by Cluster")
+plt.xlabel("Financial Features")
+plt.ylabel("Cluster")
+plt.tight_layout()
+
+
+# Save the heatmap in the script folder
+
+plt.savefig(
+    output_path / "cluster_profile_heatmap.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+
+print("\nFiles saved successfully:")
+print(output_path / "company_cluster_result.csv")
+print(output_path / "cluster_profile.csv")
+print(output_path / "silhouette_scores.csv")
+print(output_path / "cluster_profile_heatmap.png")
