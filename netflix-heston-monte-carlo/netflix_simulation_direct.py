@@ -2,51 +2,67 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
+import requests
 
-path = r"C:\Users\npgps\OneDrive\Courses\Financial modelling\code\Project\mcs\basics\merton jump square rool  diffusion model\netflix.csv"
+particular_date = pd.Timestamp.today().strftime('%Y-%m-%d')
+url = (f"https://api.nasdaq.com/api/quote/NFLX/historical?"
+       f"assetclass=stocks&fromdate=2021-10-21&limit=9999"
+       f"&todate={particular_date}&random=28")
 
-df = pd.read_csv(path)
+headers = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'application/json, text/plain, */*',
+    'Origin': 'https://www.nasdaq.com',
+    'referer': 'https://www.nasdaq.com/'
+}
 
-df = df.rename(columns={'Close/Last':'Close'})
+response = requests.get(url, headers=headers)
+data = response.json()
+
+print(data.keys())
+print(data['data'].keys())
+print(data['data']['symbol'])
+print(data['data']['totalRecords'])
+print(data['data']['tradesTable'].keys())
+print(data['data']['tradesTable']['asOf'])
+print(data['data']['tradesTable']['headers'])
+print(data['data']['tradesTable']['rows'])
+
+df = pd.DataFrame(
+    data['data']['tradesTable']['rows']
+)
+
+df = df.rename(columns={'close/Last':'close'})
 
 column_to_be_dropped = [
-    'Open',
-    'High',
-    'Low',
-    'Volume'
+    'open',
+    'high',
+    'low',
+    'volume'
 ]
 
 df = df.drop(columns=column_to_be_dropped)
 
-df['Close'] = pd.to_numeric(
-    df['Close']
+df['close'] = pd.to_numeric(
+    df['close']
     .astype(str)
     .replace('[$]','',regex=True),
     errors='coerce'
 )
 
-df['Date'] = pd.to_datetime(
-    df['Date'],
+df['date'] = pd.to_datetime(
+    df['date'],
     format='%m/%d/%Y',
 )
 
-df = df.set_index('Date')
+df = df.set_index('date')
 df = df.sort_index()
-
-# plot stock price movement
-plt.plot(
-    df.index,
-    df['Log return']
-)
-plt.title('Netflix Daily Log Returns: November 3, 2021 to October 2, 2026')
-plt.xlabel('Date')
-plt.ylabel('Log return')
-plt.tight_layout()
-plt.show()
 
 
 # calculate log return
-df['Log close price'] = np.log(df['Close'])
+df['Log close price'] = np.log(df['close'])
 df['Log return'] = (df['Log close price'] -
                     df['Log close price'].shift(1))
 
@@ -54,6 +70,23 @@ df['Rolling volatility'] = (
     df['Log return'].rolling(window=20).std() * np.sqrt(252)
 )
 df['Rolling variance'] = df['Rolling volatility'] ** 2
+
+
+# plot stock price movement
+plt.plot(
+    df.index,
+    df['Log return']
+)
+plt.title(
+    f"Netflix Daily Log Returns: "
+    f"{df.index.min().date()} to "
+    f"{df.index.max().date()}"
+)
+
+plt.xlabel('date')
+plt.ylabel('Log return')
+plt.tight_layout()
+plt.show()
 
 # Heston model
 dt = 1 / 252
@@ -95,6 +128,12 @@ rho = np.corrcoef(
     variance_shock
 )[0,1]
 
+
+if not np.isfinite(rho):
+    rho = 0.0
+
+rho = np.clip(rho, -0.999, 0.999)
+
 mu = (
     df['Log return'].mean() * 252 + 0.5 * np.mean(
         df['Previous variance'])
@@ -103,14 +142,20 @@ mu = (
 v0 = df['Rolling variance'].iloc[-1]
 
 # simulate
-number_of_step = 252
+start_date = pd.Timestamp(df.index[-1])
+end_date = start_date + pd.offsets.BDay(10)
+
 date = pd.bdate_range(
-    start=df.index[-1],
-    periods=number_of_step + 1
+    start=start_date,
+    end=end_date
 )
+
+number_of_step = len(date) - 1
 length_of_date = len(date)
+
+
 number_of_path = 50000
-initial_price = df['Close'].iloc[-1]
+initial_price = df['close'].iloc[-1]
 
 stock_path = np.zeros(
     (
@@ -129,8 +174,6 @@ mu = (
     + 0.5 * np.mean(df['Rolling variance'])
 )
 
-stock_list = []
-variance_list = []
 
 for t in range(1, number_of_step + 1):
     previous_price = stock_path[t-1]
@@ -155,10 +198,18 @@ for t in range(1, number_of_step + 1):
         rho * stock_z + np.sqrt(1 - rho ** 2) * independent_z
     )
 
-    variance_path[t] = (previous_variance
-    + kappa * (theta - previous_variance) * dt
-    + xi * np.sqrt(previous_variance) * np.sqrt(dt)
-                        * variance_z)
+    new_variance = (
+            previous_variance
+            + kappa * (theta - previous_variance) * dt
+            + xi
+            * np.sqrt(previous_variance * dt)
+            * variance_z
+    )
+
+    variance_path[t] = np.maximum(
+        new_variance,
+        0
+    )
 
     stock_path[t] = (
         previous_price
@@ -167,19 +218,25 @@ for t in range(1, number_of_step + 1):
         + np.sqrt(previous_variance * dt) * stock_z)
     )
 
-    stock_list.append(stock_path[t])
-    variance_list.append(variance_path[t])
-
 stock_df = pd.DataFrame(
     stock_path,
     index=date
 )
-variance_df = pd.DataFrame(variance_list)
+variance_df = pd.DataFrame(
+    variance_path,
+    index=date
+)
+# investment analysis
+new = stock_df.copy()
 
+new_terminal_price = new.iloc[-1]
+new_initial_price = new.iloc[0]
+
+# plot MCS
 plt.plot(
     stock_df.loc[
         stock_df.index.to_series().between(
-            '2026-10-01', '2026-10-25')]
+            start_date, end_date)]
 )
 plt.title('Netflix Heston Monte Carlo Price Paths')
 plt.xlabel('Trading day')
@@ -187,153 +244,83 @@ plt.ylabel('Simulated stock price')
 plt.tight_layout()
 plt.show()
 
-selected_price = '2026-10-23'
-print(f'\nSimulated price on {selected_price}')
-print(stock_df.loc[selected_price])
+# investment analysis
+new_return = new_terminal_price / new_initial_price - 1
+mean_new_terminal_price = new_terminal_price.mean()
 
-# =====================================
-# Investment decision analysis
-# =====================================
+new_return_avg = new_return.mean()
+simulated_returns = new_return
 
-investment_horizon = number_of_step
-terminal_prices = stock_df.iloc[-1]
-
-target_return = 0.10
-stop_loss_return = -0.15
-
-target_price = initial_price * (1 + target_return)
-stop_loss_price = initial_price * (1 + stop_loss_return)
-
-terminal_returns = terminal_prices / initial_price - 1
-
-probability_of_profit = np.mean(terminal_prices > initial_price)
-
-probability_of_target = np.mean(
-    terminal_prices >= target_price
-)
-
-probability_of_stop_loss = np.mean(
-    terminal_prices <= stop_loss_price
-)
-
-# Distribution statistics
-mean_terminal_price = terminal_prices.mean()
-median_terminal_price = terminal_prices.median()
-
-percentile_5_price = terminal_prices.quantile(0.05)
-percentile_95_price = terminal_prices.quantile(0.95)
-
-expected_return = terminal_returns.mean()
-median_return = terminal_returns.median()
-
-# 95% Value at Risk as a percentage loss
-var_95_return = terminal_returns.quantile(0.05)
-var_95_loss = max(-var_95_return, 0)
-
-# Expected Shortfall:
-# average return among the worst 5% of outcomes
-worst_5_percent = terminal_returns[
-    terminal_returns <= var_95_return
-]
-
-expected_shortfall_return = worst_5_percent.mean()
-
-# from beginning to 2027-06-08
-print("\nInvestment decision analysis")
-print("---------------------------------------")
-print(f"Current price: ${initial_price:.2f}")
-print(f"Mean terminal price: ${mean_terminal_price:.2f}")
-print(f"Median terminal price: ${median_terminal_price:.2f}")
-print(f"5th percentile price: ${percentile_5_price:.2f}")
-print(f"95th percentile price: ${percentile_95_price:.2f}")
-
-print(f"\nExpected return: {expected_return:.2%}")
-print(f"Median return: {median_return:.2%}")
-
-print(f"\nProbability of profit: "
-      f"{probability_of_profit:.2%}")
-
-print(f"Probability of reaching {target_return:.0%} return: "
-      f"{probability_of_target:.2%}")
-
-print(f"Probability of losing at least "
-      f"{abs(stop_loss_return):.0%}: "
-      f"{probability_of_stop_loss:.2%}")
-
-print(f"\n95% Value at Risk: {var_95_loss:.2%}")
-print(f"Average return in worst 5% of outcomes: "
-      f"{expected_shortfall_return:.2%}")
-
-# 33rd percentile ('2026-10-02' to '2026-10-23)
-
-# Express returns in percentage points
-
-
-new = stock_df.loc[
-   (stock_df.index >= '2026-10-02') & (stock_df.index<='2026-10-25')
-]
-
-new_terminal_price = new.iloc[-1]
-new_initial_price = new.iloc[0]
+new_price_median = new_terminal_price.median()
+new_return_median = new_return.median()
 
 prob_profit = np.mean(new_terminal_price >new_initial_price)
-print(f'prob_profit:{prob_profit:.3%}')
 
+print(f'\nInvestment analysis for {start_date} and {end_date}:')
+print(f"Mean terminal return: {new_return_avg:.3%}")
+print(f"Median terminal return: {new_return_median:.3%}")
 
+print(f'Median terminal price: ${new_price_median:.3f}')
+print(f'Median termina return between:{new_return_median:.3%}')
 
-new_return = new_terminal_price / new_initial_price - 1
-mean_new_terminal_price = new_terminal_price.mean().round(4)
-new_return_avg = new_return.mean() * 100
-new_return_pct = new_return * 100
-new_median = new_return.median() * 100
-new_median = new_median.round(4)
-mean_new_return = new_return.mean() * 100
-mean_new_return = mean_new_return.round(4)
-
-probability_of_profit_2 = np.mean(new_terminal_price > new_initial_price) * 100
-
+print(f'Probability (terminal price > initial price)'
+      f':{prob_profit:.3%}')
 
 # 95VaR
-var_95 = new_return.quantile(0.05) * 100
-var_95 = var_95.round(4)
-shortfall = new_return_pct[new_return_pct < var_95].mean()
-shortfall = shortfall.round(4)
+var_95_return = new_return.quantile(0.05)
+var_95_loss = max(-var_95_return,0)
+worst_5_pt = new_return[simulated_returns < var_95_return]
+shortfall_return = max(-worst_5_pt.mean(),0)
 
+print(f'\n95% VaR: {var_95_loss:.3%} loss')
+print(f'Expected shortfall: {shortfall_return:.3%}')
 
 # 33rd and 67th percentiles
-return_33 = new_return_pct.quantile(1 / 3)
-return_67 = new_return_pct.quantile(2 / 3)
+return_33 = simulated_returns.quantile(1 / 3)
+return_67 = simulated_returns.quantile(2 / 3)
 
 plt.hist(
-    new_return_pct,
+    simulated_returns,
     bins=50,
     edgecolor='black'
 )
 
 plt.axvline(
     return_33,
-    label=f'33.33rd percentile: {return_33:.2f}%',
+    label=f'33.33rd percentile: {return_33:.2%}',
     color='red',
     linestyle='--'
 )
 
 plt.axvline(
     return_67,
-    label=f'66.67th percentile: {return_67:.2f}%',
+    label=f'66.67th percentile: {return_67:.2%}',
     color='purple',
     linestyle='--'
 )
 
-plt.title('Monte Carlo Terminal Return Distribution (2026-10-25)')
+plt.title(f'Monte Carlo Terminal Return Distribution '
+          f'{end_date.date()}')
 plt.xlabel('Simulated Terminal Return (%)')
 plt.ylabel('Number of Simulations')
 plt.legend()
 plt.tight_layout()
 plt.show()
 
-print(f'Lower-third scenario: below {return_33:.2f}%')
-print(f'Middle-third scenario: {return_33:.2f}% to {return_67:.2f}%')
-print(f'Upper-third scenario: above {return_67:.2f}%')
+print(
+    f"\nLower-third scenario: below "
+    f"{return_33:.2%}"
+)
+
+print(
+    f"Middle-third scenario: "
+    f"{return_33:.2%} to {return_67:.2%}"
+)
+
+print(
+    f"Upper-third scenario: above "
+    f"{return_67:.2%}"
+)
 
 # simulated price distribution
 # 33rd and 67th percentiles
@@ -360,13 +347,13 @@ plt.hist(
     edgecolor='black'
 )
 
-plt.title('Monte Carlo Terminal Price (2026-10-25)')
+plt.title(f'\nMonte Carlo Terminal Price ({end_date.date()})')
 plt.xlabel('Simulated Terminal Price ($)')
 plt.ylabel('Number of Simulations')
 plt.legend()
 plt.tight_layout()
 plt.show()
 
-print(f'Lower-third scenario: below ${price_33:.2f}')
+print(f'\nLower-third scenario: below ${price_33:.2f}')
 print(f'Middle-third scenario: ${price_33:.2f} to ${price_67:.2f}')
 print(f'Upper-third scenario: above ${price_67:.2f}')
