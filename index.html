@@ -11,7 +11,7 @@
 
     <meta
         name="description"
-        content="Wai Kit Kan's finance and quantitative project portfolio, featuring quantitative finance, fixed-income forecasting, derivative valuation, risk analysis and Python projects."
+        content="Wai Kit Kan's finance and quantitative project portfolio, featuring quantitative finance, fixed-income forecasting, derivative valuation, risk analysis, DCF valuation and Python projects."
     >
 
     <title>Wai Kit Kan | Finance Project Portfolio</title>
@@ -368,6 +368,15 @@
                 );
         }
 
+        .project-header.dcf {
+            background:
+                linear-gradient(
+                    135deg,
+                    #3b0764,
+                    #9333ea
+                );
+        }
+
         .project-type {
             display: inline-block;
 
@@ -643,8 +652,8 @@
                 <p class="hero-description">
                     A collection of applied finance projects covering
                     quantitative modelling, fixed income, derivative
-                    valuation, investment analysis, risk measurement
-                    and financial forecasting.
+                    valuation, investment analysis, risk measurement,
+                    enterprise valuation and financial forecasting.
                 </p>
 
                 <div class="hero-buttons">
@@ -681,7 +690,14 @@
                 </h2>
 
                 <p>
-                    Finance, investmenttext">
+                    Finance, investment analysis and
+                    quantitative modelling
+                </p>
+            </div>
+
+            <div class="about-content">
+
+                <div class="about-text">
                     <p>
                         I am an HKUST Master of Finance graduate
                         with an interest in investment analysis,
@@ -693,9 +709,10 @@
                         This portfolio demonstrates how I apply
                         financial theory, Python programming and
                         data analysis to practical investment,
-                        derivative-valuation and forecasting problems.
-                        Each project includes supporting code,
-                        methodology and written analysis.
+                        derivative-valuation, forecasting and
+                        corporate-valuation problems. Each project
+                        includes supporting code, methodology and
+                        written analysis.
                     </p>
                 </div>
 
@@ -705,12 +722,17 @@
                     </h3>
 
                     <div class="skills-list">
+
                         <span class="skill">
                             Python
                         </span>
 
                         <span class="skill">
                             Financial Modelling
+                        </span>
+
+                        <span class="skill">
+                            DCF Valuation
                         </span>
 
                         <span class="skill">
@@ -736,6 +758,7 @@
                         <span class="skill">
                             Data Visualisation
                         </span>
+
                     </div>
                 </div>
 
@@ -755,7 +778,7 @@
 
                 <p>
                     Applied finance projects supported by code,
-                    backtesting and written analysis
+                    backtesting, simulation and written analysis
                 </p>
             </div>
 
@@ -788,9 +811,7 @@
                         <p class="project-summary">
                             A Heston stochastic-volatility simulation
                             of Netflix stock prices using 50,000
-                            simulated paths. The analysis evaluates
-                            terminal prices, holding-period returns,
-                            probability of profit, Value at Risk and
+                            simulated paths, Value at Risk and
                             Expected Shortfall.
                         </p>
 
@@ -861,6 +882,7 @@
                             <span class="technology">Statsmodels</span>
                             <span class="technology">Matplotlib</span>
                             <span class="technology">Heston Model</span>
+
                             <span class="technology">
                                 Monte Carlo Simulation
                             </span>
@@ -1119,13 +1141,13 @@
 
                                     <li>
                                         Estimated historical and EWMA
-                                        annualized volatility.
+                                        annualised volatility.
                                     </li>
 
                                     <li>
-                                        Implemented an American and
+                                        Implemented American and
                                         European binomial option-pricing
-                                        function.
+                                        functions.
                                     </li>
                                 </ul>
                             </div>
@@ -1142,12 +1164,12 @@
                                     </li>
 
                                     <li>
-                                        Historical annualized volatility:
+                                        Historical annualised volatility:
                                         31.9619%.
                                     </li>
 
                                     <li>
-                                        Latest EWMA annualized volatility:
+                                        Latest EWMA annualised volatility:
                                         22.1440%.
                                     </li>
 
@@ -1200,6 +1222,184 @@
                                 <a
                                     class="button button-code"
                                     href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/goog-ewma-option-pricing/code"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Code
+                                </a>
+
+                                <a
+                                    class="button button-folder"
+                                    href="https://github.com/WaiKitKan-Joe">
+                                    View Folder
+                                </a>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+                </article>
+
+                <!-- OSK Monte Carlo DCF project -->
+
+                <article class="project-card">
+
+                    <div class="project-header dcf">
+
+                        <span class="project-type">
+                            Corporate Valuation and Risk Analysis
+                        </span>
+
+                        <h3>
+                            OSK Monte Carlo DCF
+                            Enterprise Value Analysis
+                        </h3>
+
+                        <p>
+                            Probabilistic enterprise valuation using
+                            50,000 DCF simulations
+                        </p>
+
+                    </div>
+
+                    <div class="project-body">
+
+                        <p class="project-summary">
+                            A five-year discounted cash flow model
+                            for Oshkosh Corporation that uses Monte
+                            Carlo simulation to estimate a distribution
+                            of possible enterprise values. The model
+                            varies sales growth, EBIT margin, WACC,
+                            perpetual growth, capital expenditure,
+                            tax and working-capital assumptions to
+                            assess valuation uncertainty and compare
+                            model-implied value with the current
+                            enterprise value.
+                        </p>
+
+                        <div class="project-columns">
+
+                            <div class="project-column">
+                                <h4>
+                                    Methodology
+                                </h4>
+
+                                <ul>
+                                    <li>
+                                        Forecast five years of sales,
+                                        EBIT, NOPAT and free cash flow
+                                        to the firm.
+                                    </li>
+
+                                    <li>
+                                        Model uncertain DCF inputs
+                                        with triangular probability
+                                        distributions.
+                                    </li>
+
+                                    <li>
+                                        Run 50,000 simulations and
+                                        discount cash flows using
+                                        simulated WACC.
+                                    </li>
+
+                                    <li>
+                                        Estimate terminal value using
+                                        the Gordon growth model.
+                                    </li>
+
+                                    <li>
+                                        Measure valuation sensitivity
+                                        and the probability of exceeding
+                                        current enterprise value.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="project-column">
+                                <h4>
+                                    Key Results
+                                </h4>
+
+                                <ul>
+                                    <li>
+                                        Mean model-implied EV:
+                                        $9,027.50 million.
+                                    </li>
+
+                                    <li>
+                                        Median model-implied EV:
+                                        $8,986.06 million.
+                                    </li>
+
+                                    <li>
+                                        5th to 95th percentile range:
+                                        $5,750.28 million to
+                                        $12,453.60 million.
+                                    </li>
+
+                                    <li>
+                                        Probability that model-implied
+                                        EV exceeds $9,060 million:
+                                        48.652%.
+                                    </li>
+
+                                    <li>
+                                        WACC showed the strongest
+                                        measured negative relationship
+                                        with enterprise value.
+                                    </li>
+                                </ul>
+                            </div>
+
+                        </div>
+
+                        <div class="technology-list">
+                            <span class="technology">Python</span>
+                            <span class="technology">Pandas</span>
+                            <span class="technology">NumPy</span>
+                            <span class="technology">Matplotlib</span>
+                            <span class="technology">DCF Valuation</span>
+
+                            <span class="technology">
+                                Monte Carlo Simulation
+                            </span>
+
+                            <span class="technology">FCFF</span>
+
+                            <span class="technology">
+                                Sensitivity Analysis
+                            </span>
+                        </div>
+
+                        <div class="project-resources">
+
+                            <h4>
+                                Project Resources
+                            </h4>
+
+                            <p class="resource-description">
+                                Read the full valuation report,
+                                inspect the Python code, or browse
+                                the complete DCF and Monte Carlo
+                                simulation folder.
+                            </p>
+
+                            <div class="project-buttons">
+
+                                <a
+                                    class="button button-report"
+                                    href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/DCF%20%26MCS/OSK_Monte_Carlo_DCF_Enterprise_Value_Report.pdf"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Report
+                                </a>
+
+                                <a
+                                    class="button button-code"
+                                    href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/DCF%20%26MCS/code"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
