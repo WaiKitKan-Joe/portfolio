@@ -11,7 +11,7 @@
 
     <meta
         name="description"
-        content="Wai Kit Kan's finance and quantitative project portfolio, featuring investment analysis, financial modelling, risk analysis and Python projects."
+        content="Wai Kit Kan's finance and quantitative project portfolio, featuring financial modelling, fixed-income forecasting, risk analysis and Python projects."
     >
 
     <title>Wai Kit Kan | Finance Project Portfolio</title>
@@ -309,6 +309,11 @@
             background-color: #f4f6f8;
         }
 
+        .project-grid {
+            display: grid;
+            gap: 34px;
+        }
+
         .project-card {
             background-color: #ffffff;
 
@@ -326,7 +331,9 @@
 
         .project-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.13);
+
+            box-shadow:
+                0 12px 30px rgba(15, 23, 42, 0.13);
         }
 
         .project-header {
@@ -339,6 +346,15 @@
 
             color: #ffffff;
             padding: 34px;
+        }
+
+        .project-header.treasury {
+            background:
+                linear-gradient(
+                    135deg,
+                    #0f172a,
+                    #1d4ed8
+                );
         }
 
         .project-type {
@@ -361,7 +377,7 @@
         }
 
         .project-header p {
-            color: #fecaca;
+            color: #dbeafe;
             font-size: 16px;
         }
 
@@ -458,7 +474,6 @@
             color: #cbd5e1;
 
             text-align: center;
-
             padding: 25px;
 
             font-size: 14px;
@@ -549,17 +564,13 @@
 
         <div class="nav-links">
             <a href="#about">About</a>
-
             <a href="#projects">Projects</a>
-
             <a href="#contact">Contact</a>
 
             <a
                 href="https://github.com/WaiKitKan-Joe"
                 target="_blank"
-                rel="noopener noreferrer"
-            >
-                GitHub
+                rel="noopener noreferreritHub
             </a>
         </div>
     </nav>
@@ -581,15 +592,22 @@
 
                 <p class="hero-description">
                     A collection of applied finance projects covering
-                    quantitative modelling, investment analysis, valuation,
-                    portfolio management, risk measurement and financial
-   section -->
+                    quantitative modelling, fixed income, investment
+                    analysis, risk measurement and financial forecasting.
+                </p>
+
+                <div class="hero-buttons">
+
                     #projects
                         View Projects
                     </a>
 
-                    <!-- Opens the GitHub profile in a new tab -->
-                    https://github.com/WaiKitKan-Joe
+                    <a
+                        class="button button-secondary"
+                        href="https://github.com/WaiKitKan-Joe"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
                         Visit GitHub Profile
                     </a>
 
@@ -616,14 +634,16 @@
                     <p>
                         I am an HKUST Master of Finance graduate with an
                         interest in investment analysis, financial markets,
-                        risk management and quantitative modelling.
+                        fixed income, risk management and quantitative
+                        modelling.
                     </p>
 
                     <p>
                         This portfolio demonstrates how I apply financial
                         theory, Python programming and data analysis to
-                        practical investment problems. Each project contains
-                        supporting code, methodology and written analysis.
+                        practical investment and forecasting problems.
+                        Each project includes supporting code, methodology
+                        and written analysis.
                     </p>
                 </div>
 
@@ -633,9 +653,10 @@
                     <div class="skills-list">
                         <span class="skill">Python</span>
                         <span class="skill">Financial Modelling</span>
+                        <span class="skill">Fixed Income</span>
+                        <span class="skill">Time-Series Analysis</span>
                         <span class="skill">Monte Carlo Simulation</span>
                         <span class="skill">Risk Analysis</span>
-                        <span class="skill">Investment Analysis</span>
                         <span class="skill">Data Visualisation</span>
                     </div>
                 </div>
@@ -645,7 +666,6 @@
     </section>
 
     <!-- Projects section -->
-    <!-- The id="projects" matches href="#projects" above -->
     <section class="projects" id="projects">
         <div class="container">
 
@@ -653,134 +673,271 @@
                 <h2>Selected Projects</h2>
 
                 <p>
-                    Applied finance projects supported by code and analysis
+                    Applied finance projects supported by code,
+                    backtesting and written analysis
                 </p>
             </div>
 
-            <!-- Netflix Heston project -->
-            <article class="project-card">
+            <div class="project-grid">
 
-                <div class="project-header">
+                <!-- Netflix Heston project -->
+                <article class="project-card">
 
-                    <span class="project-type">
-                        Quantitative Finance
-                    </span>
+                    <div class="project-header">
 
-                    <h3>
-                        Netflix Stock-Price Simulation Using the Heston Model
-                    </h3>
+                        <span class="project-type">
+                            Quantitative Finance
+                        </span>
 
-                    <p>
-                        Stochastic volatility modelling and Monte Carlo
-                        simulation
-                    </p>
+                        <h3>
+                            Netflix Stock-Price Simulation Using the
+                            Heston Model
+                        </h3>
 
-                </div>
+                        <p>
+                            Stochastic volatility modelling and Monte
+                            Carlo simulation
+                        </p>
 
-                <div class="project-body">
+                    </div>
 
-                    <p class="project-summary">
-                        This project applies the Heston stochastic volatility
-                        model to simulate potential future Netflix stock-price
-                        paths. The analysis models stock returns and variance
-                        as related stochastic processes, allowing volatility
-                        to change over time rather than remaining constant.
-                    </p>
+                    <div class="project-body">
 
-                    <div class="project-columns">
+                        <p class="project-summary">
+                            A Heston stochastic-volatility simulation of
+                            Netflix stock prices, with 50,000 paths,
+                            return and terminal-price distributions,
+                            scenario percentiles, Value at Risk and
+                            Expected Shortfall.
+                        </p>
 
-                        <div class="project-column">
-                            <h4>Methodology</h4>
+                        <div class="project-columns">
 
-                            <ul>
-                                <li>
-                                    Prepared historical Netflix stock-price
-                                    data for model estimation and analysis.
-                                </li>
+                            <div class="project-column">
+                                <h4>Methodology</h4>
 
-                                <li>
-                                    Implemented correlated stock-price and
-                                    variance processes under the Heston model.
-                                </li>
+                                <ul>
+                                    <li>
+                                        Prepared historical Netflix
+                                        closing-price data.
+                                    </li>
 
-                                <li>
-                                    Generated multiple potential price paths
-                                    using Monte Carlo simulation.
-                                </li>
+                                    <li>
+                                        Estimated stochastic variance
+                                        parameters from rolling volatility.
+                                    </li>
 
-                                <li>
-                                    Examined the distribution of simulated
-                                    terminal stock prices and returns.
-                                </li>
-                            </ul>
+                                    <li>
+                                        Simulated correlated price and
+                                        variance processes.
+                                    </li>
+
+                                    <li>
+                                        Evaluated a 10-business-day
+                                        investment horizon.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="project-column">
+                                <h4>Project Outputs</h4>
+
+                                <ul>
+                                    <li>
+                                        Simulated stock-price paths.
+                                    </li>
+
+                                    <li>
+                                        Terminal-price and return
+                                        distributions.
+                                    </li>
+
+                                    <li>
+                                        Percentile-based scenarios.
+                                    </li>
+
+                                    <li>
+                                        VaR, Expected Shortfall and
+                                        probability-of-profit analysis.
+                                    </li>
+                                </ul>
+                            </div>
+
                         </div>
 
-                        <div class="project-column">
-                            <h4>Project Outputs</h4>
+                        <div class="technology-list">
+                            <span class="technology">Python</span>
+                            <span class="technology">Pandas</span>
+                            <span class="technology">NumPy</span>
+                            <span class="technology">Statsmodels</span>
+                            <span class="technology">Matplotlib</span>
+                            <span class="technology">Heston Model</span>
+                            <span class="technology">
+                                Monte Carlo Simulation
+                            </span>
+                        </div>
 
-                            <ul>
-                                <li>
-                                    Simulated future stock-price paths.
-                                </li>
+                        <div class="project-buttons">
 
-                                <li>
-                                    Distribution of terminal prices and
-                                    investment returns.
-                                </li>
+                            <a
+                                class="button button-dark"
+                                href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/netflix-heston-monte-carlo"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                View Project Folder
+                            </a>
 
-                                <li>
-                                    Percentile-based scenario analysis.
-                                </li>
+                            <a
+                                class="button button-blue"
+                                href="https://github.com/WaiKitKan-Joe/portfolio/blob/main/netflix-heston-monte-carlo/netflix_simulation_direct.py"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                View Python Code
+                            </a>
 
-                                <li>
-                                    Downside-risk assessment using Value at
-                                    Risk and Expected Shortfall concepts.
-                                </li>
-                            </ul>
+                            <a
+                                class="button button-outline"
+                                href="https://github.com/WaiKitKan-Joe/portfolio/raw/main/netflix-heston-monte-carlo/netflix-heston-monte-carlo-report.docx"
+                            >
+                                Download Report
+                            </a>
+
                         </div>
 
                     </div>
+                </article>
 
-                    <div class="technology-list">
-                        <span class="technology">Python</span>
-                        <span class="technology">Pandas</span>
-                        <span class="technology">NumPy</span>
-                        <span class="technology">Matplotlib</span>
-                        <span class="technology">Monte Carlo Simulation</span>
-                        <span class="technology">Heston Model</span>
-                    </div>
+                <!-- U.S. Treasury project -->
+                <article class="project-card">
 
-                    <div class="project-buttons">
+                    <div class="project-header treasury">
 
-                        <!-- Opens the complete project folder on GitHub -->
-                        <a
-                            class="button button-dark"
-                            href="https://github.com/WaiKitKan-Joe/portfolio/tree/main/netflix-heston-monte-carlo"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            View Project Folder
-                        </a>
+                        <span class="project-type">
+                            Fixed Income and Econometrics
+                        </span>
 
-                        <!-- Opens the Python file -->
-                        https://github.com/WaiKitKan-Joe/portfolio/blob/main/netflix-heston-monte-carlo/netflix_simulation_direct.py
-                            View Python Code
-                        </a>
+                        <h3>
+                            U.S. Treasury Yield Forecasting
+                        </h3>
 
-                        <!-- Downloads the Word report from GitHub -->
-                        https://github.com/WaiKitKan-Joe/portfolio/raw/main/netflix-heston-monte-carlo/netflix-heston-monte-carlo-report.docx
-                            Download Report
-                        </a>
+                        <p>
+                            Yield-curve factors, AutoReg modelling and
+                            expanding-window backtesting
+                        </p>
 
                     </div>
 
-                </div>
-            </article>
+                    <div class="project-body">
 
+                        <p class="project-summary">
+                            A forecasting project for the 10-year U.S.
+                            Treasury yield using DGS10, DGS5, DGS2 and
+                            DGS1MO factors. The project compares a
+                            four-factor OLS model with AR(10) and an
+                            unchanged-yield benchmark over a
+                            10-observation forecast horizon.
+                        </p>
+
+                        <div class="project-columns">
+
+                            <div class="project-column">
+                                <h4>Methodology</h4>
+
+                                <ul>
+                                    <li>
+                                        Retrieved Treasury yield data
+                                        directly from FRED.
+                                    </li>
+
+                                    <li>
+                                        Estimated a four-factor OLS
+                                        forecasting model.
+                                    </li>
+
+                                    <li>
+                                        Applied Ljung-Box, White and HAC
+                                        diagnostic procedures.
+                                    </li>
+
+                                    <li>
+                                        Backtested OLS and AR(10) models
+                                        using expanding estimation windows.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="project-column">
+                                <h4>Key Findings</h4>
+
+                                <ul>
+                                    <li>
+                                        Latest DGS10 forecast:
+                                        5.0322%.
+                                    </li>
+
+                                    <li>
+                                        Estimated 71.12% probability that
+                                        DGS10 exceeds 4.955%.
+                                    </li>
+
+                                    <li>
+                                        Factor-model OOS R²:
+                                        −31.1357%.
+                                    </li>
+
+                                    <li>
+                                        AR(10) OOS R²: −67.0541%;
+                                        the persistence benchmark
+                                        performed best.
+                                    </li>
+                                </ul>
+                            </div>
+
+                        </div>
+
+                        <div class="technology-list">
+                            <span class="technology">Python</span>
+                            <span class="technology">FRED</span>
+                            <span class="technology">Pandas</span>
+                            <span class="technology">Statsmodels</span>
+                            <span class="technology">OLS</span>
+                            <span class="technology">HAC</span>
+                            <span class="technology">AutoReg</span>
+                            <span class="technology">Backtesting</span>
+                        </div>
+
+                        <div class="project-buttons">
+
+                            <a
+                                class="button button-dark"
+                                href="https://github.com/WaiKitKan-Joe">
+                                View Project Folder
+                            </a>
+
+                            <a
+                                class="button button-blue"
+                                href="https://github.com/WaiKitKan-Joe">
+                                View Code
+                            </a>
+
+                            <a
+                                class="button button-outline"
+                                href="https://github.com/WaiKitKan-Joe">
+                                Download Report
+                            </a>
+
+                        </div>
+
+                    </div>
+                </article>
+
+            </div>
         </div>
     </section>
 
-    <!-- Contact and GitHub section -->
+    <!-- Contact section -->
     <section class="contact" id="contact">
         <div class="container">
 
@@ -789,11 +946,16 @@
                 <h2>Explore My Work</h2>
 
                 <p>
-                    My complete project files, reports and Python scripts
-                    are available through my GitHub portfolio.
+                    My project files, reports and Python scripts are
+                    available through my GitHub portfolio.
                 </p>
 
-                https://github.com/WaiKitKan-Joe
+                <a
+                    class="button button-blue"
+                    href="https://github.com/WaiKitKan-Joe"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
                     View GitHub Profile
                 </a>
 
