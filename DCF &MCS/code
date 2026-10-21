@@ -1,0 +1,233 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+simulation_no = 50000
+number_of_year = 5
+
+initial_sales = 10756
+initial_change_in_nwc = 80
+initial_da = 200.1
+
+number_of_year = 5
+
+EV0 = 9060
+year_column = ['Year 1','Year 2', 'Year 3','Year 4','Year 5']
+
+# simulated sales
+sales_growth = np.column_stack([
+    np.random.triangular(0.07, 0.12, 0.166, simulation_no),
+    np.random.triangular(0.06, 0.10, 0.140, simulation_no),
+    np.random.triangular(0.05, 0.09, 0.120, simulation_no),
+    np.random.triangular(0.04, 0.08, 0.100, simulation_no),
+    np.random.triangular(0.03, 0.07, 0.090, simulation_no)
+])
+
+sales_growth_df = pd.DataFrame(
+    sales_growth,
+    columns=year_column
+)
+
+cum_sales_growth = np.cumprod(1+sales_growth_df,axis=1)
+forecast_sales = initial_sales * cum_sales_growth
+
+# simulated EBIT margin
+ebit_margin = np.random.triangular(
+    left=0.04495,
+    mode=0.07458,
+    right=0.09397,
+    size=simulation_no
+)
+
+ebit_margin_df = pd.DataFrame(
+    ebit_margin[:, np.newaxis] * np.ones(number_of_year),
+    columns=year_column)
+
+forecast_ebit = ebit_margin_df * forecast_sales
+
+# simulated wacc
+years = np.arange(1, number_of_year + 1)
+wacc = np.random.triangular(
+    left=0.08,
+    mode=0.09,
+    right=0.11,
+    size=simulation_no
+)
+
+wacc_df = pd.DataFrame(wacc[:,np.newaxis]
+                       * np.ones(number_of_year),
+                       columns=year_column)
+
+discount_factor = pd.DataFrame(
+    (1 + wacc[:,np.newaxis]) ** years,
+    columns = year_column
+)
+
+# simulated perpetual growth
+perpetual_growth = np.random.triangular(
+    left=0.015,
+    mode=0.025,
+    right=0.031,
+    size=simulation_no
+)
+
+perpetual_growth_df = pd.DataFrame(
+    perpetual_growth[:, np.newaxis] * np.ones(number_of_year),
+    columns=year_column
+)
+
+# simulated capex
+capex_percentage = np.random.triangular(
+    left=0.02157,
+    mode=0.03000,
+    right=0.03913,
+    size=simulation_no
+)
+
+capex_percentage_df = pd.DataFrame(
+    capex_percentage[:,np.newaxis] * np.ones(number_of_year),
+                                   columns=year_column)
+
+forecast_capex = forecast_sales * capex_percentage_df
+
+# simulated nwc
+
+change_in_nwc = np.random.triangular(
+    left=0.166,
+    mode=0.167,
+    right=0.177,
+    size=simulation_no
+)
+
+forecast_change_in_nwc = ( pd.DataFrame(
+    np.ones(number_of_year)
+    * change_in_nwc[:, np.newaxis],
+    columns = year_column)
+)
+
+# simulated tax rate
+tax_rate = np.random.triangular(
+    left=0.21,
+    mode=0.233,
+    right=0.26,
+    size=simulation_no
+)
+
+tax_rate_df = pd.DataFrame(tax_rate[:,np.newaxis] * np.ones(number_of_year),
+                           columns= year_column)
+
+# simulated FCFF
+forecast_nopat = forecast_ebit * (1 - tax_rate_df)
+
+# simulated da
+forecast_da = initial_da * cum_sales_growth
+
+# simulated change in nwc
+forecast_fcff = (
+    forecast_nopat
+    + forecast_da
+    - forecast_capex
+    - forecast_change_in_nwc
+)
+
+pv_forecast_fcff = forecast_fcff / discount_factor
+sum_pv_forecast_fcff = np.sum(pv_forecast_fcff, axis = 1)
+
+terminal_fcff = (forecast_fcff.iloc[:,-1]
+                 * (1 + perpetual_growth_df.iloc[:,-1]))
+
+terminal_value = terminal_fcff / (wacc_df.iloc[:,-1]
+              - perpetual_growth_df.iloc[:,-1])
+
+pv_tv = terminal_value / (1 + wacc_df.iloc[:,-1]) ** number_of_year
+
+ev = sum_pv_forecast_fcff + pv_tv
+
+mean_ev = np.mean(ev)
+median_ev = np.median(ev)
+
+print('\n')
+print(f"Mean model implied EV:${mean_ev:,.3f} million")
+print(f"Median model implied EV:${median_ev:,.3f} million")
+print('\n')
+
+lower_boundary = ev.quantile(1 / 3)
+upper_boundary = ev.quantile(2 / 3)
+
+print(
+    f"Conservative case: below "
+    f"${lower_boundary:,.2f} million"
+)
+
+print(
+    f"Base case: ${lower_boundary:,.2f} million to "
+    f"${upper_boundary:,.2f} million"
+)
+
+print(
+    f"Optimistic case: above "
+    f"${upper_boundary:,.2f} million"
+)
+
+plt.figure(figsize = (10,5))
+plt.hist(ev, bins=50, alpha=0.7)
+
+five_th_ev = ev.quantile(0.05)
+fifty_th_ev = ev.quantile(0.50)
+ninetyfive_th_ev = ev.quantile(0.95)
+
+# Conservative case
+plt.axvline(
+    five_th_ev,
+    color="red",
+    linestyle="--",
+    linewidth=2,
+    label=f"5th %tile: ${five_th_ev:,.2f} million"
+)
+
+# Base case
+plt.axvline(
+    fifty_th_ev,
+    color="orange",
+    linestyle="--",
+    linewidth=2,
+    label=f"50th %tile: ${fifty_th_ev:,.2f} million"
+)
+
+# High case
+plt.axvline(
+    ninetyfive_th_ev,
+    color="green",
+    linestyle="--",
+    linewidth=2,
+    label=f"95th %tile: ${ninetyfive_th_ev:,.2f} million"
+)
+
+plt.xlabel('Enterprice value')
+plt.ylabel('Number of simulations')
+plt.title('Monte Carlo DCF EV distribution for OSK')
+plt.legend()
+plt.show()
+
+prob_above_EV0 = np.mean(ev > EV0)
+print('\n')
+print(f'Current EV: ${EV0} million')
+print(f'P(Model implied EV > Current EV)= {prob_above_EV0:.3%}')
+print(f'P(Model implied EV <= Current EV)= {1 - prob_above_EV0:.3%}')
+
+# sensitivity analysis
+sensitivity_df = pd.DataFrame({
+    'WACC': wacc,
+    "Perpetual Growth": perpetual_growth,
+    "Enterprise Value": ev,
+    'Year 1 Sales growth':sales_growth[:,0],
+    'Year 2 Sales growth':sales_growth[:,1],
+    'Year 3 Sales growth':sales_growth[:,2],
+    'Year 4 Sales growth':sales_growth[:,3],
+    'Year 5 Sales growth':sales_growth[:,4]
+})
+
+ev_sensitivity = (sensitivity_df.corr())
+
+print("EV sensitivity by input:")
+print(ev_sensitivity)
