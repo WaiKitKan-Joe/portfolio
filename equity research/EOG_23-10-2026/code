@@ -1,1 +1,2087 @@
+import matplotlib.pyplot as plt
+import numpy as np
 
+import pandas as pd
+import zipfile
+import io
+import requests
+
+import statsmodels.api as sm
+
+# stock data
+nasdaq_url = "https://api.nasdaq.com/api/quote/EOG/historical"
+
+end_date = pd.Timestamp.today().normalize()
+start_date = end_date - pd.DateOffset(years=5)
+
+nasdaq_params = {
+    "assetclass": "stocks",
+    "fromdate": start_date.strftime("%Y-%m-%d"),
+    "todate": end_date.strftime("%Y-%m-%d"),
+    "limit": 5000
+}
+
+nasdaq_headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/140.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.nasdaq.com",
+    "Referer": (
+        "https://www.nasdaq.com/"
+        "market-activity/stocks/eog/historical"
+    )
+}
+
+nasdaq_response = requests.get(
+    nasdaq_url,
+    params=nasdaq_params,
+    headers=nasdaq_headers,
+    timeout=30
+)
+
+# Check the HTTP request
+nasdaq_response.raise_for_status()
+
+# Convert the JSON response into a Python dictionary
+nasdaq_json = nasdaq_response.json()
+
+# Extract the trades table
+trade_table = nasdaq_json["data"]["tradesTable"]
+
+# Convert historical rows into a DataFrame
+eog_df = pd.DataFrame(trade_table["rows"])
+
+# clean the data
+columns_to_be_dropped = [
+    'volume',
+    'open',
+    'high',
+    'low'
+]
+
+eog_df = eog_df.drop(columns=columns_to_be_dropped)
+
+eog_df = eog_df.sort_values('date')
+eog_df['date'] = (
+    pd.to_datetime(eog_df['date'],errors='coerce'
+).dt.to_period('M'))
+
+eog_df_monthly = eog_df.groupby('date').last()
+
+eog_df_monthly['close'] = (
+    eog_df_monthly['close']
+    .astype(str)
+    .str.replace('[$,]','',regex=True)
+    .apply(pd.to_numeric, errors='coerce')
+)
+
+eog_df = eog_df_monthly
+eog_df['return'] = eog_df['close'].pct_change()
+eog_df = eog_df['return']  * 100
+eog_df = eog_df.to_frame()
+
+# factor data
+ff5_url = (
+    "https://mba.tuck.dartmouth.edu/pages/faculty/"
+    "ken.french/ftp/"
+    "F-F_Research_Data_5_Factors_2x3_CSV.zip"
+)
+
+# Download and open the ZIP archive
+response = requests.get(ff5_url)
+response.raise_for_status()
+
+with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+    file_name = z.namelist()[0]
+
+    with z.open(file_name) as file:
+        df = pd.read_csv(
+            file,
+            skiprows=3)
+
+# clean the data
+df.columns = df.columns.str.strip()
+df = df.rename(columns={'Unnamed: 0':'Date'})
+
+df["Date"] = (
+    df["Date"]
+    .astype(str)
+    .str.strip()
+)
+
+df = df[
+    df["Date"].str.fullmatch(r"\d{6}", na=False)
+].copy()
+
+df['Date'] = pd.to_datetime(df['Date'], format='%Y%m',
+                            errors='coerce').dt.to_period('M')
+
+column = [
+    'Mkt-RF',
+    'SMB',
+    'HML',
+    'RMW',
+    'CMA',
+    'RF'
+]
+
+df[column] = df[column].apply(
+    pd.to_numeric,
+    errors="coerce"
+)
+
+factor_column = [
+    'Mkt-RF'
+    #'SMB',
+    #'HML'
+    #'RMW',
+    #'CMA'
+]
+
+df = df.set_index('Date')
+df = df.sort_index()
+
+df[factor_column] = (
+    df[factor_column]
+    .astype(str)
+    .apply(pd.to_numeric, errors='coerce')
+)
+
+merged_df = eog_df.join(df,how='inner')
+
+merged_df = merged_df.dropna()
+
+merged_df['Excess return'] = merged_df['return'] - merged_df['RF']
+merged_df = merged_df.sort_index()
+
+# ============================================================
+# SINGLE-FACTOR CAPM REGRESSION
+# ============================================================
+
+factor_columns = [
+    "Mkt-RF"
+]
+
+merged_df = merged_df.dropna(
+    subset=[
+        "return",
+        "Mkt-RF",
+        "RF"
+    ]
+).copy()
+
+# EOG excess return
+merged_df["Excess return"] = (
+    merged_df["return"]
+    - merged_df["RF"]
+)
+
+# Independent variable
+x = sm.add_constant(
+    merged_df[factor_columns],
+    has_constant="add"
+)
+
+# Dependent variable
+y = merged_df["Excess return"]
+
+# Fit the CAPM regression
+capm_model = sm.OLS(
+    y,
+    x
+).fit()
+
+print("\nSingle-factor CAPM regression")
+print("=" * 60)
+print(capm_model.summary())
+
+
+# ============================================================
+# RAW AND BLUME-ADJUSTED BETA
+# ============================================================
+
+raw_beta = (
+    capm_model.params["Mkt-RF"]
+)
+
+adjusted_beta = (
+    0.67 * raw_beta
+    + 0.33 * 1.0
+)
+
+print(f"\nRaw historical beta: {raw_beta:.4f}")
+print(f"Blume-adjusted beta: {adjusted_beta:.4f}")
+
+# ============================================================
+# ANNUALIZED MARKET-RISK PREMIUM
+# Fama-French monthly factors are in percentage points
+# ============================================================
+
+annual_market_premium = (
+    merged_df["Mkt-RF"].mean()
+    * 12
+)
+
+# ============================================================
+# ANNUALIZED RISK-FREE RATE
+# ============================================================
+
+latest_monthly_rf = (
+    merged_df["RF"].iloc[-1]
+)
+
+annualized_rf = (
+    latest_monthly_rf * 12
+)
+
+
+# ============================================================
+# ADJUSTED CAPM COST OF EQUITY
+# ============================================================
+
+market_contribution = (
+    adjusted_beta
+    * annual_market_premium
+)
+
+# Result is initially in percentage points
+equity_cost_percentage = (
+    annualized_rf
+    + market_contribution
+)
+
+# Convert percentage points to decimal form for WACC
+equity_cost = (
+    equity_cost_percentage / 100
+)
+
+
+# ============================================================
+# DISPLAY COST-OF-EQUITY CALCULATION
+# ============================================================
+
+print("\nAdjusted CAPM cost-of-equity calculation")
+print("=" * 60)
+
+print(
+    f"Annualized risk-free rate: "
+    f"{annualized_rf:.4f}%"
+)
+
+print(
+    f"Annualized market-risk premium: "
+    f"{annual_market_premium:.4f}%"
+)
+
+print(
+    f"Raw historical beta: "
+    f"{raw_beta:.4f}"
+)
+
+print(
+    f"Blume-adjusted beta: "
+    f"{adjusted_beta:.4f}"
+)
+
+print(
+    f"Market-risk contribution: "
+    f"{market_contribution:.4f}%"
+)
+
+print(
+    f"Adjusted CAPM cost of equity: "
+    f"{equity_cost:.4%}"
+)
+
+# calculate cost of debt (TTM figure) (in %)
+# ref1: https://stockanalysis.com/stocks/eog/financials/balance-sheet/
+# ref2: https://finance.yahoo.com/quote/EOG/financials/
+ttm_interest_expense = 0.270
+latest_total_debt = 8.250
+
+tax_expense = 1.912
+pretax_income = 8.788
+
+# Effective tax rate
+tax_rate = tax_expense / pretax_income
+
+# Accounting-based pre-tax cost-of-debt proxy
+pre_tax_cost_of_debt = (
+    ttm_interest_expense / latest_total_debt
+)
+
+# After-tax cost of debt
+after_tax_cost_of_debt = (
+    pre_tax_cost_of_debt * (1 - tax_rate)
+)
+
+print(f"After-tax cost of debt: {after_tax_cost_of_debt:.2%}")
+
+# capital structure
+# ref: https://finance.yahoo.com/quote/EOG/balance-sheet/
+market_value_equity = 82.813
+market_value_debt = 8.250
+
+total_market_capital = (
+    market_value_equity + market_value_debt
+)
+
+market_equity_weight = (
+    market_value_equity / total_market_capital
+)
+
+market_debt_weight = (
+    market_value_debt / total_market_capital
+)
+
+print(f"Book equity weight: {market_equity_weight:.4%}")
+print(f"Book debt weight: {market_debt_weight:.4%}")
+
+# Calculate WACC
+wacc = (
+    market_equity_weight * equity_cost
+    + market_debt_weight
+    * pre_tax_cost_of_debt
+    * (1 - tax_rate)
+)
+
+print(f'WACC: {wacc:.4%}')
+
+# metrics (TTM figure) (in %)
+# ref https://stockanalysis.com/stocks/eog/financials/ratios/
+
+ROE = 22.51
+ROA = 11.02
+ROIC = 19.75
+
+# MC DCF
+# ============================================================
+# MONTE CARLO DCF
+# ============================================================
+
+simulation_no = 50_000
+number_of_years = 5
+
+# Reproducible random-number generator
+rng = np.random.default_rng(42)
+
+year_columns = [
+    "Year 1",
+    "Year 2",
+    "Year 3",
+    "Year 4",
+    "Year 5"
+]
+
+years = np.arange(1, number_of_years + 1)
+
+
+# ============================================================
+# LATEST EOG FINANCIAL INPUTS
+# USD millions unless otherwise specified
+# ============================================================
+
+initial_sales = 26_637
+initial_ebit = 9_058
+initial_da = 4_847
+
+# Operating NWC:
+# receivables + inventory + other current assets
+# minus accounts payable and other current liabilities
+initial_operating_nwc = (
+    3_529
+    + 930
+    + 511
+    - 3_374
+    - 913
+)
+
+cash = 4_907
+total_debt = 8_250
+shares_outstanding = 524.53  # million shares
+
+# Valuation date and latest completed regular-session close
+valuation_date = pd.Timestamp("2026-10-22")
+latest_price_date = pd.Timestamp("2026-10-21")
+latest_closing_price = 157.88
+
+# Market value in USD millions
+market_cap = (
+    latest_closing_price
+    * shares_outstanding
+)
+
+current_ev = (
+    market_cap
+    + total_debt
+    - cash
+)
+
+print("\nCurrent valuation inputs")
+print("=" * 55)
+
+print(
+    f"Valuation date: "
+    f"{valuation_date:%Y-%m-%d}"
+)
+
+print(
+    f"Latest completed trading date: "
+    f"{latest_price_date:%Y-%m-%d}"
+)
+
+print(
+    f"Latest closing share price on "
+    f"{latest_price_date:%Y-%m-%d}: "
+    f"${latest_closing_price:,.2f}"
+)
+
+print(
+    f"Market capitalization: "
+    f"${market_cap:,.2f} million"
+)
+
+print(
+    f"Market-implied enterprise value: "
+    f"${current_ev:,.2f} million"
+)
+
+print(
+    f"Calculated WACC used as simulation mode: "
+    f"{wacc:.4%}"
+)
+
+
+# ============================================================
+# SIMULATED SALES GROWTH
+# ============================================================
+
+sales_growth = np.column_stack([
+    rng.triangular(
+        left=-0.05,
+        mode=0.14,
+        right=0.22,
+        size=simulation_no
+    ),
+
+    rng.triangular(
+        left=-0.05,
+        mode=0.08,
+        right=0.18,
+        size=simulation_no
+    ),
+
+    rng.triangular(
+        left=-0.04,
+        mode=0.06,
+        right=0.14,
+        size=simulation_no
+    ),
+
+    rng.triangular(
+        left=-0.03,
+        mode=0.04,
+        right=0.10,
+        size=simulation_no
+    ),
+
+    rng.triangular(
+        left=-0.02,
+        mode=0.03,
+        right=0.08,
+        size=simulation_no
+    )
+])
+
+cumulative_sales_growth = np.cumprod(
+    1 + sales_growth,
+    axis=1
+)
+
+forecast_sales = pd.DataFrame(
+    initial_sales * cumulative_sales_growth,
+    columns=year_columns
+)
+
+
+# ============================================================
+# SIMULATED EBIT MARGIN
+# ============================================================
+
+current_ebit_margin = (
+    initial_ebit / initial_sales
+)
+
+ebit_margin = rng.triangular(
+    left=0.25,
+    mode=current_ebit_margin,
+    right=0.42,
+    size=simulation_no
+)
+
+ebit_margin_df = pd.DataFrame(
+    np.repeat(
+        ebit_margin[:, np.newaxis],
+        number_of_years,
+        axis=1
+    ),
+    columns=year_columns
+)
+
+forecast_ebit = (
+    forecast_sales
+    * ebit_margin_df
+)
+
+
+# ============================================================
+# SIMULATED TAX RATE
+# ============================================================
+
+tax_rate_simulated = rng.triangular(
+    left=0.21,
+    mode=tax_rate,
+    right=0.26,
+    size=simulation_no
+)
+
+tax_rate_df = pd.DataFrame(
+    np.repeat(
+        tax_rate_simulated[:, np.newaxis],
+        number_of_years,
+        axis=1
+    ),
+    columns=year_columns
+)
+
+forecast_nopat = (
+    forecast_ebit
+    * (1 - tax_rate_df)
+)
+
+
+# ============================================================
+# SIMULATED DEPRECIATION AND AMORTIZATION
+# ============================================================
+
+current_da_percentage = (
+    initial_da / initial_sales
+)
+
+da_percentage = rng.triangular(
+    left=0.16,
+    mode=current_da_percentage,
+    right=0.20,
+    size=simulation_no
+)
+
+da_percentage_df = pd.DataFrame(
+    np.repeat(
+        da_percentage[:, np.newaxis],
+        number_of_years,
+        axis=1
+    ),
+    columns=year_columns
+)
+
+forecast_da = (
+    forecast_sales
+    * da_percentage_df
+)
+
+
+# ============================================================
+# SIMULATED CAPITAL EXPENDITURE
+# ============================================================
+
+capex_percentage = rng.triangular(
+    left=0.21,
+    mode=0.244,
+    right=0.27,
+    size=simulation_no
+)
+
+capex_percentage_df = pd.DataFrame(
+    np.repeat(
+        capex_percentage[:, np.newaxis],
+        number_of_years,
+        axis=1
+    ),
+    columns=year_columns
+)
+
+forecast_capex = (
+    forecast_sales
+    * capex_percentage_df
+)
+
+
+# ============================================================
+# SIMULATED OPERATING WORKING CAPITAL
+# ============================================================
+
+current_nwc_percentage = (
+    initial_operating_nwc
+    / initial_sales
+)
+
+nwc_percentage = rng.triangular(
+    left=0.01,
+    mode=current_nwc_percentage,
+    right=0.04,
+    size=simulation_no
+)
+
+nwc_percentage_df = pd.DataFrame(
+    np.repeat(
+        nwc_percentage[:, np.newaxis],
+        number_of_years,
+        axis=1
+    ),
+    columns=year_columns
+)
+
+forecast_nwc_balance = (
+    forecast_sales
+    * nwc_percentage_df
+)
+
+previous_nwc_balance = np.column_stack([
+    np.full(
+        simulation_no,
+        initial_operating_nwc
+    ),
+    forecast_nwc_balance.iloc[:, :-1].to_numpy()
+])
+
+forecast_change_in_nwc = pd.DataFrame(
+    forecast_nwc_balance.to_numpy()
+    - previous_nwc_balance,
+    columns=year_columns
+)
+
+
+# ============================================================
+# SIMULATED FCFF
+# ============================================================
+
+forecast_fcff = (
+    forecast_nopat
+    + forecast_da
+    - forecast_capex
+    - forecast_change_in_nwc
+)
+
+
+# ============================================================
+# SIMULATED WACC
+# ============================================================
+
+# The previously calculated WACC is the most likely value.
+# The simulation range is one percentage point below
+# and above the calculated WACC.
+
+wacc_lower = wacc - 0.01
+wacc_upper = wacc + 0.01
+
+wacc_simulated = rng.triangular(
+    left=wacc_lower,
+    mode=wacc,
+    right=wacc_upper,
+    size=simulation_no
+)
+
+print(
+    f"\nWACC simulation range: "
+    f"{wacc_lower:.4%} to {wacc_upper:.4%}"
+)
+
+print(
+    f"Calculated WACC used as mode: "
+    f"{wacc:.4%}"
+)
+
+print(
+    f"Mean simulated WACC: "
+    f"{wacc_simulated.mean():.4%}"
+)
+
+
+# ============================================================
+# SIMULATED PERPETUAL GROWTH
+# ============================================================
+
+perpetual_growth = rng.triangular(
+    left=0.015,
+    mode=0.025,
+    right=0.030,
+    size=simulation_no
+)
+
+if np.any(wacc_simulated <= perpetual_growth):
+    raise ValueError(
+        "Each simulated WACC must exceed "
+        "the perpetual growth rate."
+    )
+
+# ============================================================
+# PRESENT VALUE OF FORECAST FCFF
+# ============================================================
+
+discount_factor = (
+    1 + wacc_simulated[:, np.newaxis]
+) ** years
+
+forecast_fcff_array = forecast_fcff.to_numpy()
+
+pv_forecast_fcff = (
+    forecast_fcff_array / discount_factor
+)
+
+sum_pv_forecast_fcff = (
+    pv_forecast_fcff.sum(axis=1)
+)
+
+
+# ============================================================
+# TERMINAL VALUE
+# ============================================================
+
+year_5_fcff = forecast_fcff_array[:, -1]
+
+terminal_fcff = (
+    year_5_fcff
+    * (1 + perpetual_growth)
+)
+
+terminal_value = (
+    terminal_fcff
+    / (wacc_simulated - perpetual_growth)
+)
+
+pv_terminal_value = (
+    terminal_value
+    / (1 + wacc_simulated) ** number_of_years
+)
+
+
+# ============================================================
+# ENTERPRISE VALUE
+# ============================================================
+
+enterprise_value = pd.Series(
+    sum_pv_forecast_fcff
+    + pv_terminal_value,
+    name="Enterprise Value"
+)
+
+
+# ============================================================
+# EQUITY VALUE AND IMPLIED SHARE PRICE
+# ============================================================
+
+equity_value = (
+    enterprise_value
+    - total_debt
+    + cash
+)
+
+implied_share_price = (
+    equity_value
+    / shares_outstanding
+)
+
+
+# ============================================================
+# SUMMARY STATISTICS
+# ============================================================
+
+mean_ev = enterprise_value.mean()
+median_ev = enterprise_value.median()
+
+mean_share_price = implied_share_price.mean()
+median_share_price = implied_share_price.median()
+
+print("\nMonte Carlo valuation results")
+print("=" * 55)
+
+print(
+    f"Mean model-implied EV: "
+    f"${mean_ev:,.2f} million"
+)
+
+print(
+    f"Median model-implied EV: "
+    f"${median_ev:,.2f} million"
+)
+
+print(
+    f"Mean implied share price: "
+    f"${mean_share_price:,.2f}"
+)
+
+print(
+    f"Median implied share price: "
+    f"${median_share_price:,.2f}"
+)
+
+
+# ============================================================
+# SCENARIO BOUNDARIES
+# ============================================================
+
+lower_boundary = enterprise_value.quantile(1 / 3)
+upper_boundary = enterprise_value.quantile(2 / 3)
+
+lower_share_price = implied_share_price.quantile(1 / 3)
+upper_share_price = implied_share_price.quantile(2 / 3)
+
+print("\nEnterprise-value scenario ranges")
+print("=" * 55)
+
+print(
+    f"Conservative case: below "
+    f"${lower_boundary:,.2f} million"
+)
+
+print(
+    f"Base case: "
+    f"${lower_boundary:,.2f} million to "
+    f"${upper_boundary:,.2f} million"
+)
+
+print(
+    f"Optimistic case: above "
+    f"${upper_boundary:,.2f} million"
+)
+
+print("\nImplied share-price scenario ranges")
+print("=" * 55)
+
+print(
+    f"Conservative case: below "
+    f"${lower_share_price:,.2f}"
+)
+
+print(
+    f"Base case: "
+    f"${lower_share_price:,.2f} to "
+    f"${upper_share_price:,.2f}"
+)
+
+print(
+    f"Optimistic case: above "
+    f"${upper_share_price:,.2f}"
+)
+
+
+# ============================================================
+# PROBABILITY ANALYSIS
+# ============================================================
+
+probability_ev_above_market = np.mean(
+    enterprise_value > current_ev
+)
+
+probability_price_above_latest_close = np.mean(
+    implied_share_price > latest_closing_price
+)
+
+print("\nProbability analysis")
+print("=" * 55)
+
+print(
+    f"Market-implied EV based on EOG's "
+    f"{latest_price_date:%Y-%m-%d} closing price: "
+    f"${current_ev:,.2f} million"
+)
+
+print(
+    f"P(Model-implied EV > market-implied EV): "
+    f"{probability_ev_above_market:.2%}"
+)
+
+print(
+    f"P(Model-implied EV <= market-implied EV): "
+    f"{1 - probability_ev_above_market:.2%}"
+)
+
+print(
+    f"EOG closing price on "
+    f"{latest_price_date:%Y-%m-%d}: "
+    f"${latest_closing_price:,.2f}"
+)
+
+print(
+    f"P(Implied share price > EOG's "
+    f"{latest_price_date:%Y-%m-%d} closing price): "
+    f"{probability_price_above_latest_close:.2%}"
+)
+
+print(
+    f"P(Implied share price <= EOG's "
+    f"{latest_price_date:%Y-%m-%d} closing price): "
+    f"{1 - probability_price_above_latest_close:.2%}"
+)
+
+
+# ============================================================
+# ENTERPRISE-VALUE DISTRIBUTION
+# ============================================================
+
+plt.figure(figsize=(8, 5))
+
+plt.hist(
+    enterprise_value,
+    bins=60,
+    alpha=0.7,
+    edgecolor="black"
+)
+
+plt.axvline(
+    lower_boundary,
+    color="red",
+    linestyle="--",
+    label=(
+        f"Lower one-third boundary: "
+        f"${lower_boundary:,.0f}m"
+    )
+)
+
+plt.axvline(
+    upper_boundary,
+    color="green",
+    linestyle="--",
+    label=(
+        f"Upper one-third boundary: "
+        f"${upper_boundary:,.0f}m"
+    )
+)
+
+plt.axvline(
+    current_ev,
+    color="black",
+    linestyle="-",
+    linewidth=2,
+    label=(
+        f"Market-implied EV using EOG's "
+        f"{latest_price_date:%Y-%m-%d} close "
+        f"of ${latest_closing_price:,.2f}: "
+        f"${current_ev:,.0f}m"
+    )
+)
+
+plt.xlabel("Enterprise value, USD millions")
+plt.ylabel("Number of simulations")
+
+plt.title(
+    "Monte Carlo DCF Enterprise-Value Distribution "
+    "for EOG Resources"
+)
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# ============================================================
+# IMPLIED SHARE-PRICE DISTRIBUTION
+# ============================================================
+
+plt.figure(figsize=(8, 5))
+
+plt.hist(
+    implied_share_price,
+    bins=60,
+    alpha=0.7,
+    edgecolor="black"
+)
+
+plt.axvline(
+    lower_share_price,
+    color="red",
+    linestyle="--",
+    linewidth=2,
+    label=(
+        f"Lower one-third boundary: "
+        f"${lower_share_price:,.2f}"
+    )
+)
+
+plt.axvline(
+    upper_share_price,
+    color="green",
+    linestyle="--",
+    linewidth=2,
+    label=(
+        f"Upper one-third boundary: "
+        f"${upper_share_price:,.2f}"
+    )
+)
+
+plt.axvline(
+    latest_closing_price,
+    color="black",
+    linestyle="-",
+    linewidth=2,
+    label=(
+        f"EOG closing price on "
+        f"{latest_price_date:%Y-%m-%d}: "
+        f"${latest_closing_price:,.2f}"
+    )
+)
+
+plt.xlabel("Implied equity value per share, USD")
+plt.ylabel("Number of simulations")
+
+plt.title(
+    "Monte Carlo DCF Implied Share-Price Distribution "
+    "for EOG Resources"
+)
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# ============================================================
+# SENSITIVITY ANALYSIS
+# ============================================================
+
+sensitivity_df = pd.DataFrame({
+    "WACC": wacc_simulated,
+    "Perpetual Growth": perpetual_growth,
+    "EBIT Margin": ebit_margin,
+    "D&A % of Sales": da_percentage,
+    "Capex % of Sales": capex_percentage,
+    "NWC % of Sales": nwc_percentage,
+    "Year 1 Sales Growth": sales_growth[:, 0],
+    "Year 2 Sales Growth": sales_growth[:, 1],
+    "Year 3 Sales Growth": sales_growth[:, 2],
+    "Year 4 Sales Growth": sales_growth[:, 3],
+    "Year 5 Sales Growth": sales_growth[:, 4],
+    "Enterprise Value": enterprise_value.to_numpy()
+})
+
+ev_sensitivity = (
+    sensitivity_df
+    .corr(numeric_only=True)["Enterprise Value"]
+    .drop("Enterprise Value")
+    .sort_values()
+)
+
+print("\nEV sensitivity by input")
+print("=" * 55)
+
+print(ev_sensitivity)
+
+# plot the sensitivity
+bar_colors = [
+    "indianred" if value < 0 else "steelblue"
+    for value in ev_sensitivity
+]
+
+
+fig, ax = plt.subplots(figsize=(9, 6))
+
+bars = ax.barh(
+    ev_sensitivity.index,
+    ev_sensitivity.values,
+    color=bar_colors,
+    edgecolor="black",
+    alpha=0.9
+)
+
+# Vertical zero line
+ax.axvline(
+    x=0,
+    color="black",
+    linewidth=1
+)
+
+# Add the correlation value beside each bar
+for bar, value in zip(bars, ev_sensitivity.values):
+
+    y_position = (
+        bar.get_y()
+        + bar.get_height() / 2
+    )
+
+    if value >= 0:
+        ax.text(
+            value + 0.01,
+            y_position,
+            f"{value:.3f}",
+            va="center",
+            ha="left",
+            fontsize=9
+        )
+
+    else:
+        ax.text(
+            value - 0.01,
+            y_position,
+            f"{value:.3f}",
+            va="center",
+            ha="right",
+            fontsize=9
+        )
+
+ax.set_xlabel(
+    "Correlation with enterprise value"
+)
+
+ax.set_ylabel(
+    "Simulated input"
+)
+
+ax.set_title(
+    "EOG Monte Carlo DCF Sensitivity by Simulated Input"
+)
+
+# Leave enough horizontal space for labels
+maximum_absolute_correlation = (
+    np.abs(ev_sensitivity.values).max()
+)
+
+ax.set_xlim(
+    -maximum_absolute_correlation - 0.12,
+    maximum_absolute_correlation + 0.12
+)
+
+fig.tight_layout()
+
+plt.show()
+
+# moving average
+# ============================================================
+# IMPORT LIBRARIES
+# ============================================================
+
+import requests
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+# ============================================================
+# DOWNLOAD EOG DAILY HISTORICAL PRICE DATA
+# ============================================================
+
+nasdaq_url = (
+    "https://api.nasdaq.com/api/quote/EOG/historical"
+)
+
+end_date = pd.Timestamp.today().normalize()
+
+start_date = (
+    end_date
+    - pd.DateOffset(years=5)
+)
+
+nasdaq_params = {
+    "assetclass": "stocks",
+    "fromdate": start_date.strftime("%Y-%m-%d"),
+    "todate": end_date.strftime("%Y-%m-%d"),
+    "limit": 5000
+}
+
+nasdaq_headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/140.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.nasdaq.com",
+    "Referer": (
+        "https://www.nasdaq.com/"
+        "market-activity/stocks/eog/historical"
+    )
+}
+
+nasdaq_response = requests.get(
+    nasdaq_url,
+    params=nasdaq_params,
+    headers=nasdaq_headers,
+    timeout=30
+)
+
+# Stop the program if the request was unsuccessful
+nasdaq_response.raise_for_status()
+
+# Convert JSON response into a Python dictionary
+nasdaq_json = nasdaq_response.json()
+
+# Check that historical data exist
+if (
+    nasdaq_json.get("data") is None
+    or nasdaq_json["data"].get("tradesTable") is None
+    or nasdaq_json["data"]["tradesTable"].get("rows") is None
+):
+    raise ValueError(
+        "Nasdaq did not return historical price data."
+    )
+
+trade_table = (
+    nasdaq_json["data"]["tradesTable"]
+)
+
+# Convert the price records into a DataFrame
+eog_daily = pd.DataFrame(
+    trade_table["rows"]
+)
+
+
+# ============================================================
+# CLEAN DAILY PRICE DATA
+# ============================================================
+
+# Keep only the necessary columns
+eog_daily = eog_daily[
+    [
+        "date",
+        "close"
+    ]
+].copy()
+
+# Convert dates into datetime format
+eog_daily["date"] = pd.to_datetime(
+    eog_daily["date"],
+    errors="coerce"
+)
+
+# Remove dollar signs and commas from closing prices
+eog_daily["close"] = (
+    eog_daily["close"]
+    .astype(str)
+    .str.replace(
+        r"[$,]",
+        "",
+        regex=True
+    )
+)
+
+# Convert prices into numeric values
+eog_daily["close"] = pd.to_numeric(
+    eog_daily["close"],
+    errors="coerce"
+)
+
+# Remove rows with invalid dates or prices
+eog_daily = eog_daily.dropna(
+    subset=[
+        "date",
+        "close"
+    ]
+)
+
+# Remove duplicate dates, if any
+eog_daily = eog_daily.drop_duplicates(
+    subset=["date"],
+    keep="last"
+)
+
+# Sort observations from earliest to latest
+eog_daily = (
+    eog_daily
+    .sort_values("date")
+    .reset_index(drop=True)
+)
+
+print("\nCleaned daily EOG data")
+print("=" * 60)
+
+print(eog_daily.head())
+
+print(
+    f"\nFirst price date: "
+    f"{eog_daily['date'].min():%Y-%m-%d}"
+)
+
+print(
+    f"Latest price date: "
+    f"{eog_daily['date'].max():%Y-%m-%d}"
+)
+
+print(
+    f"Number of daily observations: "
+    f"{len(eog_daily):,}"
+)
+
+
+# ============================================================
+# CALCULATE DAILY RETURNS
+# ============================================================
+
+eog_daily["Daily_return"] = (
+    eog_daily["close"]
+    .pct_change()
+)
+
+
+# ============================================================
+# CALCULATE SIMPLE MOVING AVERAGES
+# ============================================================
+
+eog_daily["SMA_20"] = (
+    eog_daily["close"]
+    .rolling(
+        window=20,
+        min_periods=20
+    )
+    .mean()
+)
+
+eog_daily["SMA_50"] = (
+    eog_daily["close"]
+    .rolling(
+        window=50,
+        min_periods=50
+    )
+    .mean()
+)
+
+eog_daily["SMA_200"] = (
+    eog_daily["close"]
+    .rolling(
+        window=200,
+        min_periods=200
+    )
+    .mean()
+)
+
+
+# ============================================================
+# CALCULATE EXPONENTIAL MOVING AVERAGES
+# ============================================================
+
+eog_daily["EMA_20"] = (
+    eog_daily["close"]
+    .ewm(
+        span=20,
+        adjust=False # use the recursive EMA formula
+    )
+    .mean()
+)
+
+eog_daily["EMA_50"] = (
+    eog_daily["close"]
+    .ewm(
+        span=50,
+        adjust=False
+    )
+    .mean()
+)
+
+
+# ============================================================
+# CALCULATE PRICE DISTANCE FROM MOVING AVERAGES
+# ============================================================
+
+eog_daily["Price_vs_SMA_20"] = (
+    eog_daily["close"]
+    / eog_daily["SMA_20"]
+    - 1
+)
+
+eog_daily["Price_vs_SMA_50"] = (
+    eog_daily["close"]
+    / eog_daily["SMA_50"]
+    - 1
+)
+
+eog_daily["Price_vs_SMA_200"] = (
+    eog_daily["close"]
+    / eog_daily["SMA_200"]
+    - 1
+)
+
+
+# ============================================================
+# IDENTIFY 50-DAY AND 200-DAY MOVING-AVERAGE CROSSOVERS
+# ============================================================
+
+# 1 means the 50-day SMA is above the 200-day SMA
+# 0 means the 50-day SMA is below or equal to the 200-day SMA
+eog_daily["MA_position"] = np.where(
+    eog_daily["SMA_50"]
+    > eog_daily["SMA_200"],
+    1,
+    0
+)
+
+# Compare today's position with yesterday's position
+eog_daily["MA_crossover"] = (
+    eog_daily["MA_position"]
+    .diff()
+)
+
+# Golden cross:
+# 50-day SMA moves from below to above the 200-day SMA
+eog_daily["Golden_cross"] = (
+    eog_daily["MA_crossover"] == 1
+)
+
+# Death cross:
+# 50-day SMA moves from above to below the 200-day SMA
+eog_daily["Death_cross"] = (
+    eog_daily["MA_crossover"] == -1
+)
+
+
+# ============================================================
+# EXTRACT CROSSOVER DATES
+# ============================================================
+
+golden_crosses = eog_daily.loc[
+    eog_daily["Golden_cross"],
+    [
+        "date",
+        "close",
+        "SMA_50",
+        "SMA_200"
+    ]
+].copy()
+
+death_crosses = eog_daily.loc[
+    eog_daily["Death_cross"],
+    [
+        "date",
+        "close",
+        "SMA_50",
+        "SMA_200"
+    ]
+].copy()
+
+print("\nGolden-cross signals")
+print("=" * 60)
+
+if golden_crosses.empty:
+    print("No golden cross was identified.")
+else:
+    print(golden_crosses.to_string(index=False))
+
+print("\nDeath-cross signals")
+print("=" * 60)
+
+if death_crosses.empty:
+    print("No death cross was identified.")
+else:
+    print(death_crosses.to_string(index=False))
+
+
+# ============================================================
+# LATEST MOVING-AVERAGE ANALYSIS
+# ============================================================
+
+complete_ma_data = eog_daily.dropna(
+    subset=[
+        "SMA_20",
+        "SMA_50",
+        "SMA_200"
+    ]
+)
+
+if complete_ma_data.empty:
+    raise ValueError(
+        "There are not enough daily observations "
+        "to calculate the 200-day moving average."
+    )
+
+latest_ma_data = (
+    complete_ma_data.iloc[-1]
+)
+
+latest_date = (
+    latest_ma_data["date"]
+)
+
+latest_price = (
+    latest_ma_data["close"]
+)
+
+latest_sma_20 = (
+    latest_ma_data["SMA_20"]
+)
+
+latest_sma_50 = (
+    latest_ma_data["SMA_50"]
+)
+
+latest_sma_200 = (
+    latest_ma_data["SMA_200"]
+)
+
+latest_ema_20 = (
+    latest_ma_data["EMA_20"]
+)
+
+latest_ema_50 = (
+    latest_ma_data["EMA_50"]
+)
+
+price_vs_sma_20 = (
+    latest_ma_data["Price_vs_SMA_20"]
+)
+
+price_vs_sma_50 = (
+    latest_ma_data["Price_vs_SMA_50"]
+)
+
+price_vs_sma_200 = (
+    latest_ma_data["Price_vs_SMA_200"]
+)
+
+
+# ============================================================
+# CLASSIFY THE LATEST TREND
+# ============================================================
+
+if (
+    latest_price > latest_sma_20
+    and latest_sma_20 > latest_sma_50
+    and latest_sma_50 > latest_sma_200
+):
+    trend = "Strong upward trend"
+
+elif (
+    latest_price < latest_sma_20
+    and latest_sma_20 < latest_sma_50
+    and latest_sma_50 < latest_sma_200
+):
+    trend = "Strong downward trend"
+
+elif (
+    latest_price > latest_sma_50
+    and latest_sma_50 > latest_sma_200
+):
+    trend = "Moderate upward trend"
+
+elif (
+    latest_price < latest_sma_50
+    and latest_sma_50 < latest_sma_200
+):
+    trend = "Moderate downward trend"
+
+else:
+    trend = "Mixed or sideways trend"
+
+
+# ============================================================
+# DISPLAY THE LATEST TREND SUMMARY
+# ============================================================
+
+print("\nLatest EOG moving-average analysis")
+print("=" * 60)
+
+print(
+    f"Date: "
+    f"{latest_date:%Y-%m-%d}"
+)
+
+print(
+    f"Closing price: "
+    f"${latest_price:,.2f}"
+)
+
+print(
+    f"20-day SMA: "
+    f"${latest_sma_20:,.2f}"
+)
+
+print(
+    f"50-day SMA: "
+    f"${latest_sma_50:,.2f}"
+)
+
+print(
+    f"200-day SMA: "
+    f"${latest_sma_200:,.2f}"
+)
+
+print(
+    f"20-day EMA: "
+    f"${latest_ema_20:,.2f}"
+)
+
+print(
+    f"50-day EMA: "
+    f"${latest_ema_50:,.2f}"
+)
+
+print(
+    f"Price versus 20-day SMA: "
+    f"{price_vs_sma_20:.2%}"
+)
+
+print(
+    f"Price versus 50-day SMA: "
+    f"{price_vs_sma_50:.2%}"
+)
+
+print(
+    f"Price versus 200-day SMA: "
+    f"{price_vs_sma_200:.2%}"
+)
+
+print(
+    f"Current trend classification: "
+    f"{trend}"
+)
+
+if latest_sma_50 > latest_sma_200:
+    print(
+        "Long-term moving-average position: "
+        "50-day SMA is above the 200-day SMA."
+    )
+else:
+    print(
+        "Long-term moving-average position: "
+        "50-day SMA is below the 200-day SMA."
+    )
+
+
+# ============================================================
+# PLOT THE CLOSING PRICE AND MOVING AVERAGES
+# ============================================================
+
+fig, ax = plt.subplots(
+    figsize=(11, 5)
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["close"],
+    label="EOG closing price",
+    color="black",
+    linewidth=1.4
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["SMA_20"],
+    label="20-day SMA",
+    linewidth=1.2
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["SMA_50"],
+    label="50-day SMA",
+    linewidth=1.5
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["SMA_200"],
+    label="200-day SMA",
+    linewidth=2
+)
+
+# Golden-cross markers
+ax.scatter(
+    golden_crosses["date"],
+    golden_crosses["close"],
+    marker="^",
+    s=120,
+    color="green",
+    label="Golden cross",
+    zorder=5
+)
+
+# Death-cross markers
+ax.scatter(
+    death_crosses["date"],
+    death_crosses["close"],
+    marker="v",
+    s=120,
+    color="red",
+    edgecolor="black",
+    label="Death cross",
+    zorder=5
+)
+
+ax.set_title(
+    "EOG Resources Price and Moving-Average Analysis"
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Closing price, USD")
+
+ax.legend()
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+plt.show()
+
+
+# ============================================================
+# PLOT THE PRICE DISTANCE FROM THE MOVING AVERAGES
+# ============================================================
+
+fig, ax = plt.subplots(
+    figsize=(9, 5)
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Price_vs_SMA_20"] * 100,
+    label="Price versus 20-day SMA"
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Price_vs_SMA_50"] * 100,
+    label="Price versus 50-day SMA"
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Price_vs_SMA_200"] * 100,
+    label="Price versus 200-day SMA"
+)
+
+ax.axhline(
+    y=0,
+    color="black",
+    linewidth=1
+)
+
+ax.set_title(
+    "EOG Price Distance from Moving Averages"
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Price distance, percent")
+
+ax.legend()
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+plt.show()
+
+
+# ============================================================
+# 50-DAY / 200-DAY CROSSOVER STRATEGY
+# ============================================================
+
+# Position:
+# 1 = hold EOG
+# 0 = hold cash
+eog_daily["Position"] = np.where(
+    eog_daily["SMA_50"]
+    > eog_daily["SMA_200"],
+    1,
+    0
+)
+
+# Shift the position by one day to prevent look-ahead bias.
+# Today's moving-average signal is used from the next day.
+eog_daily["Strategy_return"] = (
+    eog_daily["Position"]
+    .shift(1)
+    * eog_daily["Daily_return"]
+)
+
+eog_daily["Strategy_return"] = (
+    eog_daily["Strategy_return"]
+    .fillna(0)
+)
+
+# Buy-and-hold cumulative wealth
+eog_daily["Buy_and_hold_value"] = (
+    1
+    + eog_daily["Daily_return"].fillna(0)
+).cumprod()
+
+# Moving-average strategy cumulative wealth
+eog_daily["Strategy_value"] = (
+    1
+    + eog_daily["Strategy_return"]
+).cumprod()
+
+
+# ============================================================
+# CALCULATE BACKTEST PERFORMANCE
+# ============================================================
+
+buy_and_hold_total_return = (
+    eog_daily["Buy_and_hold_value"].iloc[-1]
+    - 1
+)
+
+strategy_total_return = (
+    eog_daily["Strategy_value"].iloc[-1]
+    - 1
+)
+
+# Approximate number of trading years
+trading_years = (
+    len(eog_daily) / 252
+)
+
+buy_and_hold_annual_return = (
+    eog_daily["Buy_and_hold_value"].iloc[-1]
+    ** (1 / trading_years)
+    - 1
+)
+
+strategy_annual_return = (
+    eog_daily["Strategy_value"].iloc[-1]
+    ** (1 / trading_years)
+    - 1
+)
+
+buy_and_hold_volatility = (
+    eog_daily["Daily_return"]
+    .std()
+    * np.sqrt(252)
+)
+
+strategy_volatility = (
+    eog_daily["Strategy_return"]
+    .std()
+    * np.sqrt(252)
+)
+
+
+# ============================================================
+# CALCULATE DRAWDOWNS
+# ============================================================
+
+eog_daily["Buy_and_hold_peak"] = (
+    eog_daily["Buy_and_hold_value"]
+    .cummax()
+)
+
+eog_daily["Buy_and_hold_drawdown"] = (
+    eog_daily["Buy_and_hold_value"]
+    / eog_daily["Buy_and_hold_peak"]
+    - 1
+)
+
+eog_daily["Strategy_peak"] = (
+    eog_daily["Strategy_value"]
+    .cummax()
+)
+
+eog_daily["Strategy_drawdown"] = (
+    eog_daily["Strategy_value"]
+    / eog_daily["Strategy_peak"]
+    - 1
+)
+
+buy_and_hold_max_drawdown = (
+    eog_daily["Buy_and_hold_drawdown"]
+    .min()
+)
+
+strategy_max_drawdown = (
+    eog_daily["Strategy_drawdown"]
+    .min()
+)
+
+
+# ============================================================
+# COUNT TRADING SIGNALS
+# ============================================================
+
+number_of_golden_crosses = (
+    eog_daily["Golden_cross"]
+    .sum()
+)
+
+number_of_death_crosses = (
+    eog_daily["Death_cross"]
+    .sum()
+)
+
+number_of_position_changes = (
+    eog_daily["Position"]
+    .diff()
+    .abs()
+    .fillna(0)
+    .sum()
+)
+
+
+# ============================================================
+# DISPLAY BACKTEST RESULTS
+# ============================================================
+
+print("\nMoving-average crossover backtest")
+print("=" * 60)
+
+print(
+    f"Buy-and-hold total return: "
+    f"{buy_and_hold_total_return:.2%}"
+)
+
+print(
+    f"50/200-day SMA strategy total return: "
+    f"{strategy_total_return:.2%}"
+)
+
+print(
+    f"Buy-and-hold annualized return: "
+    f"{buy_and_hold_annual_return:.2%}"
+)
+
+print(
+    f"Strategy annualized return: "
+    f"{strategy_annual_return:.2%}"
+)
+
+print(
+    f"Buy-and-hold annualized volatility: "
+    f"{buy_and_hold_volatility:.2%}"
+)
+
+print(
+    f"Strategy annualized volatility: "
+    f"{strategy_volatility:.2%}"
+)
+
+print(
+    f"Buy-and-hold maximum drawdown: "
+    f"{buy_and_hold_max_drawdown:.2%}"
+)
+
+print(
+    f"Strategy maximum drawdown: "
+    f"{strategy_max_drawdown:.2%}"
+)
+
+print(
+    f"Number of golden crosses: "
+    f"{number_of_golden_crosses}"
+)
+
+print(
+    f"Number of death crosses: "
+    f"{number_of_death_crosses}"
+)
+
+print(
+    f"Number of position changes: "
+    f"{number_of_position_changes:.0f}"
+)
+
+
+# ============================================================
+# PLOT STRATEGY VERSUS BUY AND HOLD
+# ============================================================
+
+fig, ax = plt.subplots(
+    figsize=(9, 5)
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Buy_and_hold_value"],
+    label="Buy and hold",
+    linewidth=1.8
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Strategy_value"],
+    label="50/200-day SMA strategy",
+    linewidth=1.8
+)
+
+ax.set_title(
+    "EOG Moving-Average Strategy versus Buy and Hold"
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Growth of $1")
+
+ax.legend()
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+plt.show()
+
+
+# ============================================================
+# PLOT DRAWDOWNS
+# ============================================================
+
+fig, ax = plt.subplots(
+    figsize=(8, 5)
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Buy_and_hold_drawdown"] * 100,
+    label="Buy-and-hold drawdown"
+)
+
+ax.plot(
+    eog_daily["date"],
+    eog_daily["Strategy_drawdown"] * 100,
+    label="Strategy drawdown"
+)
+
+ax.axhline(
+    y=0,
+    color="black",
+    linewidth=1
+)
+
+ax.set_title(
+    "EOG Drawdown Comparison"
+)
+
+ax.set_xlabel("Date")
+ax.set_ylabel("Drawdown, percent")
+
+ax.legend()
+ax.grid(alpha=0.3)
+
+fig.tight_layout()
+plt.show()
+
+
+# ============================================================
+# SAVE RESULTS TO CSV
+# ============================================================
+
+output_columns = [
+    "date",
+    "close",
+    "Daily_return",
+    "SMA_20",
+    "SMA_50",
+    "SMA_200",
+    "EMA_20",
+    "EMA_50",
+    "Price_vs_SMA_20",
+    "Price_vs_SMA_50",
+    "Price_vs_SMA_200",
+    "Golden_cross",
+    "Death_cross",
+    "Position",
+    "Strategy_return",
+    "Buy_and_hold_value",
+    "Strategy_value",
+    "Buy_and_hold_drawdown",
+    "Strategy_drawdown"
+]
+
+eog_daily[output_columns].to_csv(
+    "eog_moving_average_analysis.csv",
+    index=False
+)
+
+print(
+    "\nMoving-average results saved as "
+    "'eog_moving_average_analysis.csv'."
+)
