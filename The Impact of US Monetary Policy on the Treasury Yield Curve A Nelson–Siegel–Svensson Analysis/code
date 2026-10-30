@@ -1,0 +1,1146 @@
+import os
+
+import statsmodels.api as sm
+import pandas as pd
+import numpy as np
+import requests
+import matplotlib.pyplot as plt
+
+from scipy.optimize import curve_fit
+from scipy.stats import t
+
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
+
+# you must enter your api to retrieve the data
+# you can log into FRED to request api
+api = input(f'\nEnter your registered FRED API key: ').strip()
+print('Password received. Please wait. Invalid key will cause an error.')
+
+headers = {
+    'user-agent': 'project/1.0',
+    'accept': '*/*',
+    'accept-encoding':'gzip'
+}
+
+id_list = [
+    'DGS1MO',
+    'DGS3MO',
+    'DGS6MO',
+    'DGS1',
+    'DGS2',
+    'DGS3',
+    'DGS5',
+    'DGS7',
+    'DGS10',
+    'DGS20',
+    'DGS30'
+]
+
+yield_df_list = []
+
+for id in id_list:
+    url = f'https://api.stlouisfed.org/fred/series/observations?series_id={id}&api_key={api}&file_type=json'
+
+    response = requests.get(url, headers=headers)
+    response.headers
+    data = response.json()
+
+    data_df = pd.DataFrame(data['observations'])
+
+    data_df = data_df.drop(columns=['realtime_start', 'realtime_end'])
+    data_df['date'] = pd.to_datetime(data_df['date'],format='%Y-%m-%d')
+    data_df['value'] = pd.to_numeric(data_df['value'],errors='coerce')
+
+    data_df = data_df.set_index('date')
+    data_df = data_df.sort_index()
+
+    data_df = data_df.rename(columns={'value': f'{id}'})
+    yield_df_list.append(data_df)
+
+merged_data = pd.concat(yield_df_list,axis=1,join='outer',sort=True)
+
+column_mapping = {
+    "DGS1MO": "1M",
+    "DGS3MO": "3M",
+    "DGS6MO": "6M",
+    "DGS1": "1Y",
+    "DGS2": "2Y",
+    "DGS3": "3Y",
+    "DGS5": "5Y",
+    "DGS7": "7Y",
+    "DGS10": "10Y",
+    "DGS20": "20Y",
+    "DGS30": "30Y"
+}
+merged_df = pd.DataFrame(merged_data)
+merged_df = merged_df.rename(columns=column_mapping)
+
+# set study period
+start_date = '2009-01-01'
+merged_df = merged_df.loc[start_date:]
+
+# convert daily data to month-end data
+merged_df = merged_df.resample('ME').last()
+
+print(f'\nData table: ')
+print(merged_df)
+
+maturities = np.array([
+    1 / 12,
+    3 / 12,
+    6 / 12,
+    1,
+    2,
+    3,
+    5,
+    7,
+    10,
+    20,
+    30
+])
+
+plt.figure(figsize=[12, 6])
+
+for maturity in merged_df.columns:
+    plt.plot(
+        merged_df.index,
+        merged_df[maturity],
+        label = maturity
+    )
+
+plt.title(f'Yield curve from {start_date} '
+          f'to {merged_df.index[-1].date()}')
+plt.ylabel('Yield')
+plt.xlabel('Date')
+
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# define NSS function
+def nss_yield(
+        maturity,
+        beta0,
+        beta1,
+        beta2,
+        beta3,
+        tau1,
+        tau2
+):
+    loading1 = (
+        1 - np.exp(-maturity / tau1)
+    ) / (maturity / tau1)
+
+    loading2 = (
+        loading1 - np.exp(-maturity / tau1)
+    )
+
+    loading3 = (
+        1 - np.exp(-maturity / tau2)
+    ) / (maturity / tau2) - np.exp(-maturity / tau2)
+
+    fitted_yield = (
+        beta0
+        + beta1 * loading1
+        + beta2 * loading2
+        + beta3 * loading3
+    )
+
+    return fitted_yield
+
+selected_date = merged_df.index[-1]
+observed_yield = merged_df.loc[selected_date].to_numpy(dtype=float)
+
+# fit the model
+initial_parameters = [
+    observed_yield[-1],
+    observed_yield[0] - observed_yield[-1],
+    1,
+    1,
+    1.5,
+    5
+]
+
+estimated_parameters, covariance = curve_fit(
+    nss_yield,
+    maturities,
+    observed_yield,
+    p0=initial_parameters)
+
+# plot the fitted curve
+smooth_maturities = np.linspace(
+    1 / 12,
+    30,
+    300
+)
+
+smooth_fitted_yield = nss_yield(
+    smooth_maturities,
+    *estimated_parameters
+)
+
+plt.figure(figsize=(8, 5))
+
+plt.scatter(
+    maturities,
+    observed_yield,
+    label="Observed Yield"
+)
+
+plt.plot(
+    smooth_maturities,
+    smooth_fitted_yield,
+    label="NSS Fitted Curve"
+)
+
+plt.title(
+    f"Observed and NSS-Fitted Treasury Yield Curve\n"
+    f"{selected_date.date()}"
+)
+
+plt.xlabel("Maturity in Years")
+plt.ylabel("Yield (%)")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Estimate NSS parameters for every month
+fitted_result = []
+
+for date in merged_df.index:
+    observed_yield = merged_df.loc[date].to_numpy(dtype=float)
+
+    initial_parameters = [
+        observed_yield[-1],
+        observed_yield[0] - observed_yield[-1],
+        1,
+        1,
+        1.5,
+        5
+    ]
+
+    estimated_parameters, covariance = curve_fit(
+        nss_yield,
+        maturities,
+        observed_yield,
+        p0=initial_parameters,
+        bounds=(
+            [-np.inf, -np.inf, -np.inf, -np.inf, 0.05, 0.05],
+            [np.inf, np.inf, np.inf, np.inf, 20, 40]
+        ),
+        maxfev=50000)
+
+    fitted_yield = nss_yield(
+        maturities,
+        *estimated_parameters
+    )
+
+    rmse = np.sqrt(
+        np.mean(
+            (observed_yield - fitted_yield)**2
+        )
+    )
+
+    fitted_result.append({
+        'date': date,
+        'beta0': estimated_parameters[0],
+        'beta1': estimated_parameters[1],
+        'beta2': estimated_parameters[2],
+        'beta3': estimated_parameters[3],
+        'tau1': estimated_parameters[4],
+        'tau2': estimated_parameters[5],
+        'RMSE': rmse
+    })
+
+fitted_df = pd.DataFrame(fitted_result).set_index('date')
+
+# plot the parameters
+fitted_df[
+ [   'beta0',
+    'beta1',
+    'beta2',
+    'beta3']
+].plot()
+
+plt.title("NSS Beta Parameters Over Time")
+plt.xlabel("Date")
+plt.ylabel("Parameter value")
+plt.tight_layout()
+plt.show()
+
+# plot fitting errors
+fitted_df[['RMSE']].plot()
+plt.title("NSS RMSE Over Time")
+plt.xlabel("Date")
+plt.ylabel("RMSE value")
+plt.tight_layout()
+plt.show()
+# Between 2022–2023, the observed yield curve had a shape that was
+# more difficult for the estimated NSS specification to reproduce.
+
+# retrieve the fed funds target range
+
+id = [
+    'DFEDTARU',
+    'DFEDTARL'
+]
+
+policy_list = []
+
+for x in id:
+    new_url = f'https://api.stlouisfed.org/fred/series/observations?series_id={x}&api_key={api}&file_type=json'
+
+    response = requests.get(new_url,headers=headers)
+    new_data = response.json()
+
+    new_data_df = pd.DataFrame(new_data['observations'])
+
+    new_data_df.columns = new_data_df.columns.str.strip()
+
+    new_data_df = new_data_df.drop(columns=['realtime_start', 'realtime_end'])
+    new_data_df['date'] = pd.to_datetime(new_data_df['date'], format='%Y-%m-%d')
+    new_data_df['value'] = pd.to_numeric(new_data_df['value'], errors='coerce')
+
+    new_data_df = new_data_df.rename(columns={'value': f'{x}'})
+
+    new_data_df = new_data_df.set_index("date")
+    new_data_df = new_data_df.sort_index()
+
+    policy_list.append(new_data_df)
+
+merged_new_data = pd.concat(policy_list,join='outer', axis=1, sort=True)
+merged_new_data = merged_new_data.loc[start_date:]
+
+# calculate the policy target rate midpoints
+merged_new_data['policy midpoint'] = (merged_new_data['DFEDTARU']
+                                      + merged_new_data['DFEDTARL']) / 2
+
+monthly_newdata_df = merged_new_data.resample('ME').last()
+monthly_newdata_df = monthly_newdata_df['policy midpoint']
+monthly_newdata_df = monthly_newdata_df.to_frame()
+
+# Add observed Treasury yields
+observed_yield_df = merged_df[
+    [
+        '1M',
+        '10Y'
+    ]
+].rename(
+    columns={
+        '1M': 'Observed 1M yield',
+        '10Y': 'Observed 10Y yield'
+    }
+)
+
+# Join policy, NSS parameters and observed yields
+joined_df = (
+    monthly_newdata_df
+    .join(
+        fitted_df,
+        how='inner'
+    )
+    .join(
+        observed_yield_df,
+        how='inner'
+    )
+)
+
+# ---------------------------------------------------------
+# Calculate NSS rates and policy variables
+# ---------------------------------------------------------
+
+# Calculate the NSS instantaneous short rate first
+joined_df['NSS short rate'] = (
+    joined_df['beta0']
+    + joined_df['beta1']
+)
+
+# Calculate the fitted one-month NSS yield
+joined_df['NSS 1M yield'] = nss_yield(
+    1 / 12,
+    joined_df['beta0'],
+    joined_df['beta1'],
+    joined_df['beta2'],
+    joined_df['beta3'],
+    joined_df['tau1'],
+    joined_df['tau2']
+)
+
+# Calculate the difference between the NSS short rate
+# and the federal funds target midpoint
+joined_df['Policy spread'] = (
+    joined_df['NSS short rate']
+    - joined_df['policy midpoint']
+)
+
+# Convert the policy spread into basis points
+joined_df['Policy spread bps'] = (
+    joined_df['Policy spread']
+    * 100
+)
+
+# Calculate the monthly policy midpoint change
+joined_df['Policy midpoint change'] = (
+    joined_df['policy midpoint']
+    .diff()
+)
+
+
+# plot to compare midpoint rate with level and slope
+joined_df[
+    [
+        'beta0',
+        'beta1',
+        'policy midpoint'
+    ]
+].plot()
+
+plt.title("NSS Level, Slope and Federal Funds Target Midpoint")
+plt.xlabel("Date")
+plt.ylabel("Parameter and midpoint value")
+plt.tight_layout()
+plt.show()
+
+# compare with policy rate
+joined_df[[
+    'NSS short rate',
+    'policy midpoint'
+]].plot()
+
+plt.title("NSS-Implied Short Rate and Federal Funds Target Midpoint")
+plt.xlabel("Date")
+plt.ylabel("Rate")
+plt.tight_layout()
+plt.show()
+
+# model prediction
+ols_factor_column = ['policy midpoint']
+
+x = sm.add_constant(joined_df[ols_factor_column], has_constant='add')
+y = joined_df['NSS short rate']
+
+regression_model = sm.OLS(y, x).fit()
+
+print('\n Regression summary:')
+print(regression_model.summary())
+
+# backtest
+joined_df['next_month_short_rate'] = (
+    joined_df['NSS short rate'].shift(-1)
+)
+
+split_date = '2022-12-31'
+
+train_df = joined_df.loc[:split_date]
+test_df = joined_df.loc['2023-01-01':]
+
+# model
+x_train = sm.add_constant(
+    train_df[ols_factor_column],
+    has_constant='add'
+)
+
+y_train = train_df['next_month_short_rate']
+
+train_model = sm.OLS(
+    y_train,
+    x_train,
+    missing='drop'
+).fit()
+
+x_test = sm.add_constant(
+    test_df[ols_factor_column],
+    has_constant='add'
+)
+
+test_result = train_model.predict(x_test)
+
+# model RMSE
+ols_model_error = (
+    test_df['next_month_short_rate']
+    - test_result
+)
+
+ols_model_rmse = np.sqrt(
+    np.mean(
+        ols_model_error ** 2
+    )
+)
+
+# benchmark RMSE
+ols_benchmark_error = (
+    test_df['next_month_short_rate']
+    - test_df['NSS short rate']
+)
+
+ols_benchmark_rmse = np.sqrt(
+    np.mean(
+        ols_benchmark_error ** 2
+    )
+)
+print('\nOLS backtest result:')
+
+print(
+    f'OLS model RMSE: '
+    f'{ols_model_rmse:.4f}'
+)
+
+print(
+    f'OLS benchmark RMSE: '
+    f'{ols_benchmark_rmse:.4f}'
+)
+
+ols_rmse_difference_bps = (
+    abs(
+        ols_benchmark_rmse
+        - ols_model_rmse
+    )
+    * 100
+)
+
+if ols_model_rmse < ols_benchmark_rmse:
+
+    print(
+        'Conclusion: The OLS model outperforms '
+        'the no-change benchmark by '
+        f'{ols_rmse_difference_bps:.2f} '
+        'basis points in terms of RMSE.'
+    )
+
+else:
+
+    print(
+        'Conclusion: The OLS model underperforms '
+        'the no-change benchmark by '
+        f'{ols_rmse_difference_bps:.2f} '
+        'basis points in terms of RMSE.'
+    )
+
+# example of using the model the forecast the fed funds rate
+current_fed_funds_rate = 4.375 # in %
+
+current_x = pd.DataFrame(
+    {'policy midpoint': [current_fed_funds_rate]}
+)
+
+current_x = sm.add_constant(current_x['policy midpoint'],
+                            has_constant='add')
+
+forecast_short_rate = regression_model.predict(
+    current_x
+).iloc[0]
+
+# classify NSS short-rate conditions
+joined_df['Short-rate change bps'] = (
+    joined_df['NSS short rate']
+    .diff()
+    * 100
+)
+
+joined_df['Policy change bps'] = (
+    joined_df['policy midpoint']
+    .diff()
+    * 100
+)
+
+threshold_bps = 5.00
+
+joined_df['Short-rate condition'] = np.select(
+    [
+        joined_df['Short-rate change bps']
+        > threshold_bps,
+
+        joined_df['Short-rate change bps']
+        < -threshold_bps
+    ],
+    [
+        'Tighter short-rate conditions',
+        'Easier short-rate conditions'
+    ],
+    default='Broadly unchanged'
+)
+
+joined_df['Fed policy stance'] = np.select(
+    [
+        joined_df['Policy change bps'] > 0,
+        joined_df['Policy change bps'] < 0
+    ],
+    [
+        'Fed tightening',
+        'Fed easing'
+    ],
+    default='Fed policy unchanged'
+)
+
+result = joined_df[
+    [
+    'Short-rate condition',
+    'Fed policy stance'
+    ]
+]
+
+# plot change rates
+joined_df[
+    [
+        'Short-rate change bps',
+        'Policy change bps'
+    ]
+].plot(
+    figsize=(8, 5)
+)
+
+plt.title('Monthly Changes in Short Rate and Policy Midpoint')
+plt.xlabel('Date')
+plt.ylabel('Monthly Change in Basis Points')
+plt.tight_layout()
+plt.show()
+
+# Classify the spread
+threshold_bps = 5
+
+joined_df['Policy spread condition'] = np.select(
+    [
+        joined_df['Policy spread bps'] > threshold_bps,
+        joined_df['Policy spread bps'] < -threshold_bps
+    ],
+    [
+        'Short rate above policy midpoint',
+        'Short rate below policy midpoint'
+    ],
+    default='Broadly aligned'
+)
+
+# Display recent observations
+spread_df = joined_df[
+    [
+        'NSS short rate',
+        'Policy change bps',
+        'Policy spread bps',
+        'Policy spread condition'
+    ]
+]
+
+print('\nPolicy-spread analysis:')
+print(spread_df)
+
+# Plot the policy spread
+plt.plot(
+    joined_df.index,
+    joined_df['Policy spread bps'],
+    label='Policy Spread'
+)
+
+
+plt.axhline(
+    0,
+    color='black',
+    linewidth=1
+)
+
+plt.axhline(
+    threshold_bps,
+    color='grey',
+    linestyle='--',
+    linewidth=1
+)
+
+plt.axhline(
+    -threshold_bps,
+    color='grey',
+    linestyle='--',
+    linewidth=1
+)
+
+plt.title('NSS Short Rate Relative to Policy Midpoint')
+plt.xlabel('Date')
+plt.ylabel('Policy Spread in Basis Points')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------
+# 1. Create forecasting variables
+# ---------------------------------------------------------
+
+joined_df['Observed 1M yield change'] = (
+    joined_df['Observed 1M yield']
+    .diff()
+)
+
+joined_df['Observed 1M yield change lag 1'] = (
+    joined_df['Observed 1M yield change']
+    .shift(1)
+)
+
+joined_df['Observed 1M yield change lag 2'] = (
+    joined_df['Observed 1M yield change']
+    .shift(2)
+)
+
+joined_df['Observed 1M yield change mean 3M'] = (
+    joined_df['Observed 1M yield change'].rolling(3).mean()
+)
+
+joined_df['Observed 1M yield volatility 3M'] = (
+    joined_df['Observed 1M yield change']
+    .rolling(3)
+    .std()
+)
+
+joined_df['Policy spread change'] = (
+    joined_df['Policy spread']
+    .diff()
+)
+
+joined_df['Short-rate change'] = (
+    joined_df['NSS short rate']
+    .diff()
+)
+
+joined_df['next_month_observed_1M_yield'] = (
+    joined_df['Observed 1M yield']
+    .shift(-1)
+)
+
+joined_df['next_month_observed_1M_change'] = (
+    joined_df['next_month_observed_1M_yield']
+    - joined_df['Observed 1M yield']
+)
+
+target_column = (
+    'next_month_observed_1M_change'
+)
+
+
+# ---------------------------------------------------------
+# 2. Candidate predictor sets
+# ---------------------------------------------------------
+
+predictor_sets = {
+    # Tests whether recent yield changes continue or reverse
+    'Momentum': [
+        'Observed 1M yield change',
+        'Observed 1M yield change lag 1',
+        'Observed 1M yield change lag 2'
+    ],
+
+    # Tests the recent trend while accounting for volatility
+    'Smoothed momentum': [
+        'Observed 1M yield change',
+        'Observed 1M yield change mean 3M',
+        'Observed 1M yield volatility 3M'
+    ],
+
+    # Combines yield momentum with direct Fed policy information
+    'Policy and momentum': [
+        'Observed 1M yield change',
+        'Observed 1M yield change mean 3M',
+        'Policy midpoint change',
+        'Policy spread'
+    ],
+
+    # Tests changes in both Fed policy and market-policy alignment
+    'Policy dynamics': [
+        'Observed 1M yield change',
+        'Policy midpoint change',
+        'Policy spread',
+        'Policy spread change'
+    ],
+
+    # Tests whether the NSS short rate helps forecast the observed 1M yield
+    'NSS short-rate dynamics': [
+        'Observed 1M yield change',
+        'Observed 1M yield change mean 3M',
+        'Short-rate change',
+        'Policy spread'
+    ]
+}
+
+all_predictors = sorted({
+    factor
+    for factors in predictor_sets.values()
+    for factor in factors
+})
+
+
+model_df = joined_df[
+    all_predictors
+    + [
+        'Observed 1M yield',
+        'next_month_observed_1M_yield',
+        target_column
+    ]].replace(
+    [np.inf, -np.inf],
+    np.nan
+).copy()
+
+validation_dates = model_df.loc[
+    '2018-01-31':'2022-11-30'
+].index
+
+window_candidates = [
+    24,
+    36,
+    48,
+    60,
+    84,
+    120,
+    None
+]
+
+alpha_candidates = [
+    0.01,
+    0.10,
+    1.00,
+    10.00,
+    100.00,
+    110.00,
+    120.00,
+    125.00,
+    130.00,
+    135.00,
+    140.00,
+    145.00,
+    150.00,
+    155.00,
+    160.00,
+    165.00,
+    170.00,
+    175.00,
+    180.00
+]
+
+weight_candidates = [
+    0.25,
+    0.50,
+    0.75,
+    1.00
+]
+
+threshold_candidates_bps = np.arange(1,4.5,0.225)
+# ---------------------------------------------------------
+# Improved multi-period validation
+# ---------------------------------------------------------
+
+validation_periods = {
+    '2018-2019': (
+        '2018-01-31',
+        '2019-12-31'
+    ),
+    '2020-2021': (
+        '2020-01-31',
+        '2021-12-31'
+    ),
+    '2022': (
+        '2022-01-31',
+        '2022-11-30'
+    )
+}
+
+best_score = np.inf
+best_parameters = None
+penalty = 2
+
+for predictor_name, factors in predictor_sets.items():
+
+    for window in window_candidates:
+
+        for alpha in alpha_candidates:
+
+            period_results = {}
+
+            # Generate forecasts separately by period
+            for period_name, dates in validation_periods.items():
+
+                actual_changes = []
+                raw_forecasts = []
+
+                validation_dates = model_df.loc[
+                    dates[0]:dates[1]
+                ].index
+
+                for forecast_date in validation_dates:
+
+                    current_row = model_df.loc[
+                        [forecast_date]
+                    ]
+
+                    historical_data = model_df.loc[
+                        model_df.index < forecast_date
+                    ].dropna(
+                        subset=factors + [target_column]
+                    )
+
+                    if window is not None:
+                        historical_data = (
+                            historical_data.tail(window)
+                        )
+
+                    scaler = StandardScaler()
+
+                    x_train = scaler.fit_transform(
+                        historical_data[factors]
+                    )
+
+                    current_x = scaler.transform(
+                        current_row[factors]
+                    )
+
+                    ridge_model = Ridge(
+                        alpha=alpha
+                    )
+
+                    ridge_model.fit(
+                        x_train,
+                        historical_data[target_column]
+                    )
+
+                    actual_changes.append(
+                        current_row[
+                            target_column
+                        ].iloc[0]
+                    )
+
+                    raw_forecasts.append(
+                        ridge_model.predict(
+                            current_x
+                        )[0]
+                    )
+
+                period_results[period_name] = {
+                    'actual':
+                        np.array(actual_changes),
+
+                    'raw_forecast':
+                        np.array(raw_forecasts)
+                }
+
+            # Test weights and thresholds
+            for weight in weight_candidates:
+
+                for threshold_bps in (threshold_candidates_bps):
+
+                    period_scores = []
+
+                    for period_name in validation_periods:
+
+                        actual = period_results[
+                            period_name
+                        ]['actual']
+
+                        raw_forecast = period_results[
+                            period_name
+                        ]['raw_forecast']
+
+                        weighted_forecast = weight * raw_forecast
+
+
+                        predicted = np.where(
+                            np.abs(
+                                weighted_forecast
+                            ) * 100 >= threshold_bps,
+                            weighted_forecast,
+                            0.0
+                        )
+
+                        model_errors = (actual - predicted)
+
+                        model_rmse = np.sqrt(
+                            np.mean(model_errors ** 2)
+                        )
+
+                        model_mae = np.mean(
+                            np.abs(model_errors)
+                        )
+
+                        benchmark_rmse = np.sqrt(
+                            np.mean(actual ** 2)
+                        )
+
+                        benchmark_mae = np.mean(
+                            np.abs(actual)
+                        )
+
+                        score = max(
+                            model_rmse / benchmark_rmse,
+                            model_mae / benchmark_mae
+                        )
+
+                        period_scores.append(score)
+
+                    period_scores = np.array(period_scores)
+
+                    average_score = np.mean(period_scores)
+                    score_variability = period_scores.std()
+
+                    stable_score = (
+                            average_score
+                            + penalty * score_variability
+                    )
+
+                    if (average_score < 1 and
+                            stable_score < best_score):
+                        best_score = stable_score
+
+                        best_parameters = {
+                            'predictor_name': predictor_name,
+                            'factor_column': factors.copy(),
+                            'window': window,
+                            'alpha': alpha,
+                            'weight': weight,
+                            'threshold_bps': threshold_bps,
+                            'score': score,
+                            'model_rmse': model_rmse,
+                            'benchmark_rmse': benchmark_rmse,
+                            'model_mae': model_mae,
+                            'benchmark_mae': benchmark_mae
+                        }
+
+
+print(f'factors: {factors}')
+print(f'window: {window}')
+print(f'alpha: {alpha}')
+print(f'weight: {weight}')
+print(f'threshold_bps: {threshold_bps}')
+
+print(f'Model rmse: {model_rmse}')
+print(f'Benchmark rmse: {benchmark_rmse}')
+print(f'Model mae: {model_mae}')
+print(f'Benchmark mae: {benchmark_mae}')
+
+# ---------------------------------------------------------
+# 5. Out-of-sample backtest
+# ---------------------------------------------------------
+actual_list = []
+model_list = []
+benchmark_list = []
+date_list = []
+
+test_dates = model_df.loc['2022-12-31':].index
+
+for forecast_date in test_dates:
+
+    current_row = model_df.loc[[forecast_date]]
+
+    historical_data = model_df.loc[
+        model_df.index < forecast_date
+    ].dropna(
+        subset=factors
+    )
+
+    if window is not None:
+        historical_data = historical_data.tail(window)
+
+    current_yield = current_row[
+        'Observed 1M yield'
+    ].iloc[0]
+
+    actual_yield = current_row[
+        'next_month_observed_1M_yield'
+    ].iloc[0]
+
+    scaler = StandardScaler()
+
+    x_train = scaler.fit_transform(
+        historical_data[factors]
+    )
+
+    current_x = scaler.transform(
+        current_row[factors]
+    )
+
+    ridge_model = Ridge(alpha=alpha)
+
+    ridge_model.fit(
+        x_train,
+        historical_data[target_column]
+    )
+
+    predicted_change = (
+        weight
+        * ridge_model.predict(current_x)[0]
+    )
+
+    if abs(predicted_change) * 100 < threshold_bps:
+        predicted_change = 0.0
+
+    actual_list.append(actual_yield)
+
+    model_list.append(
+        current_yield + predicted_change
+    )
+
+    benchmark_list.append(current_yield)
+
+    date_list.append(forecast_date)
+
+
+result_df = pd.DataFrame(
+    {
+        'Actual yield': actual_list,
+        'Model forecast': model_list,
+        'Benchmark forecast': benchmark_list
+    },
+    index=date_list
+)
+
+result_df['Model error'] = (
+    result_df['Actual yield']
+    - result_df['Model forecast']
+)
+
+result_df['Benchmark error'] = (
+    result_df['Actual yield']
+    - result_df['Benchmark forecast']
+)
+
+model_rmse = np.sqrt(
+    np.mean(result_df['Model error'] ** 2)
+)
+
+benchmark_rmse = np.sqrt(
+    np.mean(result_df['Benchmark error'] ** 2)
+)
+
+model_mae = np.mean(
+    np.abs(result_df['Model error'])
+)
+
+benchmark_mae = np.mean(
+    np.abs(result_df['Benchmark error'])
+)
+
+rmse_improvement = (
+    benchmark_rmse - model_rmse
+) / benchmark_rmse
+
+mae_improvement = (
+    benchmark_mae - model_mae
+) / benchmark_mae
+
+print('\nOut-of-sample backtest result:')
+print(f'Model RMSE: {model_rmse:.3f}')
+print(f'Benchmark RMSE: {benchmark_rmse:.3f}')
+print(f'Model MAE: {model_mae:.3f}')
+print(f'Benchmark MAE: {benchmark_mae:.3f}')
+print(f'RMSE improvement: {rmse_improvement:.3%}')
+print(f'MAE improvement: {mae_improvement:.3%}')
+
+# plot the result
+result_df[[
+    'Model forecast',
+    'Benchmark forecast',
+    'Actual yield'
+]].plot(
+    figsize=(8, 5)
+)
+
+plt.title(
+    'Model, Benchmark, and Actual Yield'
+)
+
+plt.ylabel('Yield (%)')
+plt.xlabel('Date')
+plt.tight_layout()
+plt.show()
