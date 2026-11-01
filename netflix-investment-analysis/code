@@ -1,0 +1,290 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+import statsmodels.api as sm
+import requests
+from itertools import combinations
+
+particular_date = pd.Timestamp.today().strftime('%Y-%m-%d')
+url = (f"https://api.nasdaq.com/api/quote/NFLX/historical?"
+       f"assetclass=stocks&fromdate=2021-10-21&limit=9999"
+       f"&todate={particular_date}&random=28")
+
+headers = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'application/json, text/plain, */*',
+    'Origin': 'https://www.nasdaq.com',
+    'referer': 'https://www.nasdaq.com/'
+}
+
+response = requests.get(url, headers=headers)
+data = response.json()
+
+df = pd.DataFrame(
+    data['data']['tradesTable']['rows']
+)
+
+df = df.rename(columns={'close/Last':'close'})
+
+column_to_be_dropped = [
+    'open',
+    'high',
+    'low',
+    'volume'
+]
+
+df = df.drop(columns=column_to_be_dropped)
+
+df['close'] = pd.to_numeric(
+    df['close']
+    .astype(str)
+    .replace('[$]','',regex=True),
+    errors='coerce'
+)
+
+df['date'] = pd.to_datetime(
+    df['date'],
+    format='%m/%d/%Y',
+)
+
+df = df.set_index('date')
+df = df.sort_index()
+
+# set a study period
+start_date = '2024-10-21'
+end_date = df.index[-1]
+
+df = df.loc[start_date:end_date]
+
+# calculate log return
+df['Log close price'] = np.log(df['close'])
+df['Log return'] = (df['Log close price'] -
+                    df['Log close price'].shift(1))
+
+df['Rolling volatility'] = (
+    df['Log return'].rolling(window=20).std() * np.sqrt(252)
+)
+df['Rolling variance'] = df['Rolling volatility'] ** 2
+
+# calculate the return
+df['return'] = df['close'].pct_change()
+
+# plot the stock price movement
+df['close'].plot()
+
+plt.title('Netflix stock price movement')
+plt.xlabel('Date')
+plt.ylabel('Price')
+plt.tight_layout()
+plt.show()
+
+# plot log return movement
+plt.plot(
+    df.index,
+    df['Log return']
+)
+plt.title(
+    f"Netflix Daily Log Returns: "
+    f"{df.index.min().date()} to "
+    f"{df.index.max().date()}"
+)
+
+plt.xlabel('date')
+plt.ylabel('Log return')
+plt.tight_layout()
+plt.show()
+
+df['5D MA'] = df['close'].rolling(5).mean()
+df['10D MA'] = df['close'].rolling(10).mean()
+df['20D MA'] = df['close'].rolling(20).mean()
+df['50D MA'] = df['close'].rolling(50).mean()
+
+# plot the MA
+df[[
+    'close',
+    '20D MA',
+    '10D MA',
+    '5D MA'
+]].plot()
+
+days_10_above_20 = (
+    df['20D MA'] < df['10D MA']
+).sum()
+
+days_10_below_20 = (
+    df['20D MA'] > df['10D MA']
+).sum()
+
+ma_count_df =pd.DataFrame({
+    'days_10_above_20': [days_10_above_20],
+    'days_10_below_20': [days_10_below_20]
+})
+
+ma_count_df.plot(
+    kind='bar'
+)
+plt.title('10-Day MA versus 20-Day MA')
+plt.xlabel('days')
+plt.ylabel('Number of trading days')
+plt.tight_layout()
+plt.show()
+
+# set the trading strategy
+df['position'] = np.select(
+    [df['20D MA'] < df['10D MA'],
+     df['20D MA'] > df['10D MA']],
+    [1,-1], default = 0
+)
+
+df['trade'] = df['position'].diff()
+
+df['trade signal'] = np.select(
+    [
+        df['trade'] ==2,
+        df['trade'] ==-2,
+        df['trade'] ==1,
+        df['trade']==-1
+    ],
+    [
+        'switch to long',
+        'switch to short',
+        'Enter long',
+        'Enter short'
+    ], default='No trade'
+)
+
+# plot the signal
+signal_count = df['trade signal'].value_counts()
+
+ax = signal_count.plot(kind='bar')
+ax.set_title('Number of Trading Signals')
+ax.set_xlabel('signal')
+ax.set_ylabel('Number of observations')
+
+ax.bar_label(ax.containers[0])
+
+plt.tight_layout()
+plt.show()
+
+# develop an optimized model
+
+# this part is the algorithm but is removed
+
+highest_return = result_df['total_return'].max()
+
+best_return_index = result_df['total_return'].idxmax()
+
+best_fast_window = result_df['fast_window'].loc[best_return_index]
+best_medium_window = result_df['medium_window'].loc[best_return_index]
+best_intermediate_window = result_df['intermediate_window'].loc[best_return_index]
+best_slow_window = result_df['slow_window'].loc[best_return_index]
+
+print(f'best fast window: {best_fast_window}')
+print(f'best medium window: {best_medium_window}')
+print(f'best intermediate window: {best_intermediate_window}')
+print(f'best slow window: {best_slow_window}')
+
+test_df['best fast window'] = test_df['close'].rolling(best_fast_window).mean()
+test_df['best medium window'] = test_df['close'].rolling(best_medium_window).mean()
+test_df['best intermediate window'] = test_df['close'].rolling(best_intermediate_window).mean()
+test_df['best slow window'] = test_df['close'].rolling(best_slow_window).mean()
+
+# this part is the algorithm but is removed
+
+test_df['position'] = pd.Series(test_df['position'], index=test_df.index)
+test_df['strategy_return'] = test_df['position'].shift(1) * test_df['return']
+test_df['strategy_growth'] = (1 + test_df['strategy_return'].fillna(0)).cumprod()
+test_df_total_return = test_df['strategy_growth'].iloc[-1] - 1
+test_df['strategy_peak'] =  test_df['strategy_growth'].cummax()
+test_df['drawdown'] = test_df['strategy_growth'] / test_df['strategy_peak'] - 1
+test_df_max_drawdown = test_df['drawdown'].min()
+
+test_df['buy and hold'] = (1+test_df['return'].fillna(0)).cumprod()
+
+# plot the test result
+test_df[
+    [
+        'strategy_growth',
+        'buy and hold'
+    ]
+].plot()
+
+plt.title('Joe\'s strategy vs buy and hold')
+plt.xlabel('Date')
+plt.ylabel('Growth of $1')
+plt.tight_layout()
+plt.show()
+
+print(f'\nBacktest result of the investment period '
+      f'{test_df.index[0].date()} to {test_df.index[-1].date()}:')
+
+if (test_df['strategy_growth'].iloc[-1] - 1
+        > test_df['buy and hold'].iloc[-1] - 1):
+    print('Conclusion: Joe\'s strategy outperforms the buy-and-hold method.')
+else:
+    print('Conclusion: Joe\'s strategy underperforms the buy-and-hold method.')
+
+print(f'Terminal strategy return: {test_df['strategy_growth'].iloc[-1] - 1:.3%}')
+print(f'Terminal buy-and-hold return: {test_df['buy and hold'].iloc[-1] - 1:.3%}')
+
+# apply the strategy to the entire selected dataset
+df['best fast window'] = df['close'].rolling(best_fast_window).mean()
+df['best medium window'] = df['close'].rolling(best_medium_window).mean()
+df['best intermediate window'] = df['close'].rolling(best_intermediate_window).mean()
+df['best slow window'] = df['close'].rolling(best_slow_window).mean()
+
+# this part is the algorithm but is removed
+
+df['position'] = pd.Series(df['position'], index=df.index)
+df['strategy_return'] = df['position'].shift(1) * df['return']
+df['strategy_growth'] = (1 + df['strategy_return'].fillna(0)).cumprod()
+total_return_df = df['strategy_growth'].iloc[-1] - 1
+df['strategy_peak'] =  df['strategy_growth'].cummax()
+df['drawdown'] = df['strategy_growth'] / df['strategy_peak'] - 1
+df_max_drawdown = df['drawdown'].min()
+
+df['buy and hold'] = (1+df['return'].fillna(0)).cumprod()
+
+# plot the entire result
+df[
+    [
+        'strategy_growth',
+        'buy and hold'
+    ]
+].plot()
+
+plt.title('Joe\'s strategy vs buy and hold')
+plt.xlabel('Date')
+plt.ylabel('Growth of $1')
+plt.tight_layout()
+plt.show()
+
+print(f'\nBacktest result of the investment period '
+      f'{df.index[0].date()} to {df.index[-1].date()}:')
+
+if (df['strategy_growth'].iloc[-1] - 1
+        > df['buy and hold'].iloc[-1] - 1):
+    print('Conclusion: Joe\'s strategy outperforms the buy-and-hold method.')
+else:
+    print('Conclusion: Joe\'s strategy underperforms the buy-and-hold method.')
+
+print(f'Terminal strategy return: {df['strategy_growth'].iloc[-1] - 1:.3%}')
+print(f'Terminal buy-and-hold return: {df['buy and hold'].iloc[-1] - 1:.3%}')
+
+# calculate the sharpe ratio for the entire selected data
+annual_df = 0.0416
+daily_rf = (1+annual_df) ** (1/252) - 1
+
+strategy_excess_return = df['strategy_return'] - daily_rf
+strategy_sharpe = (strategy_excess_return.mean()
+                   / strategy_excess_return.std()) * np.sqrt(252)
+
+buy_and_hold_excess_return = df['return'] - daily_rf
+buy_and_hold_sharpe = (buy_and_hold_excess_return.mean()
+                       /buy_and_hold_excess_return.std()) * np.sqrt(252)
+
+print(f'Strategy Sharpe Ratio: {strategy_sharpe:.3f}')
+print(f'Buy-and-hold Sharpe Ratio: {buy_and_hold_sharpe:.3f}')
