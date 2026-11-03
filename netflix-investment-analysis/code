@@ -288,3 +288,228 @@ buy_and_hold_sharpe = (buy_and_hold_excess_return.mean()
 
 print(f'Strategy Sharpe Ratio: {strategy_sharpe:.3f}')
 print(f'Buy-and-hold Sharpe Ratio: {buy_and_hold_sharpe:.3f}')
+
+
+
+# stress test
+def evaluate_strategy(
+        slippage = 0,
+        transaction_cost = 0,
+        position = test_df['position'].shift(1),
+        returns = test_df['return']
+):
+
+    turnover = position.diff().abs().fillna(0)
+
+    trading_cost = (slippage + transaction_cost) * turnover
+
+    net_period_return = position * returns - trading_cost
+
+    strategy_growth = (1 + net_period_return).cumprod()
+
+    strategy_terminal_return = strategy_growth.iloc[-1] - 1
+
+    evaluation_result = {
+        'strategy_terminal_return': strategy_terminal_return,
+        'strategy_growth': strategy_growth,
+        'net_period_return': net_period_return,
+        'turnover': turnover
+    }
+
+    return evaluation_result
+
+# baseline case
+baseline = evaluate_strategy()
+baseline['strategy_growth'].plot()
+
+# cost case
+slippage_levels = np.arange(0.0001,0.002,0.0001)
+transaction_cost_levels = np.arange(0,0.001,0.0001)
+
+cost_list = []
+
+for slippage_level in slippage_levels:
+    for transaction_cost_level in transaction_cost_levels:
+
+        cost_case = evaluate_strategy(
+            slippage = slippage_level,
+            transaction_cost = transaction_cost_level
+        )
+
+        cost_list.append({
+            'slippage_level': slippage_level,
+            'transaction_cost_level': transaction_cost_level,
+            'strategy_terminal_return': cost_case['strategy_terminal_return'],
+            'strategy_growth': cost_case['strategy_growth'],
+            'net_period_return': cost_case['net_period_return'],
+            'turnover': cost_case['turnover']
+        })
+
+cost_terminal_return_df = pd.concat(
+    [
+    case['strategy_growth']
+    for case in cost_list
+    ],
+    axis = 1
+).plot(legend=False)
+
+plt.title('The cost case')
+plt.xlabel('Date')
+plt.ylabel('Growth of $1')
+plt.tight_layout()
+plt.show()
+
+cost_terminal_return = [case['strategy_terminal_return']
+                        for case in cost_list]
+
+cost_terminal_return_df = (pd.DataFrame(cost_terminal_return,
+                        columns=['strategy_terminal_return']))
+
+lower = np.quantile(cost_terminal_return, 1/3)
+upper = np.quantile(cost_terminal_return, 2/3)
+
+ax1 = cost_terminal_return_df.plot(kind='hist', figsize=(10, 5))
+
+x = cost_terminal_return_df['strategy_terminal_return'] < lower
+
+x.value_counts().plot(kind='pie', title='Proportion of Scenarios Below the Lower Return Threshold'
+                      , autopct='%1.1f%%')
+
+prob_below_lower = cost_terminal_return_df[
+cost_terminal_return_df['strategy_terminal_return'] < lower
+].mean().iloc[0]
+
+prob_above_upper = cost_terminal_return_df[
+cost_terminal_return_df['strategy_terminal_return'] > upper
+].mean().iloc[0]
+
+prob_between_lower_and_upper = cost_terminal_return_df[
+(cost_terminal_return_df['strategy_terminal_return'] > lower) &
+(cost_terminal_return_df['strategy_terminal_return'] < upper)
+].mean().iloc[0]
+
+prob_df = pd.DataFrame({
+    'Scenario': ['Below lower', 'Between lower and upper','Above upper'],
+    'Probability' : [prob_below_lower, prob_between_lower_and_upper, prob_above_upper]
+})
+
+
+fig, ax = plt.subplot_mosaic([
+    ['A', 'B']
+])
+
+cost_terminal_return_df.plot(kind='hist', figsize=(10, 5), ax=ax['A'])
+prob_df.plot(kind='bar', title = 'Probability under the cost stress test'
+        , x='Scenario', y='Probability', figsize=(8, 6), ax=ax['B'])
+
+ax['A'].set_title('The cost case: terminal return')
+ax['A'].set_xlabel('Terminal Return')
+ax['A'].set_ylabel('frequency')
+ax['A'].axvline(lower, color='r', label=f'lower (33.33rd %tile): {lower:.3f}')
+ax['A'].axvline(upper, color='g', label=f'upper (66.66th %tile): {upper:.3f}')
+
+ax['B'].bar_label(ax['B'].containers[0],
+                  labels=[
+                      f'{value:.2%}'
+                      for value in ax['B'].containers[0].datavalues
+                  ])
+ax['A'].legend()
+plt.tight_layout()
+plt.show()
+
+# market crash
+crash_levels = [-0.05, -0.10, -0.20, -0.351]
+
+crash_return = test_df['return'].copy()
+
+long_dates = test_df.index[
+test_df['position'] > 0
+]
+
+latest_long_date = long_dates[-1]
+
+crash_case = []
+
+for crash in crash_levels:
+
+    crash_return.loc[latest_long_date] = crash
+
+    crash_result = evaluate_strategy(returns=crash_return)
+
+    crash_case.append({
+        'Shock level': crash,
+        'Total return': crash_result['strategy_terminal_return'],
+        'strategy_growth': crash_result['strategy_growth']
+    }
+    )
+
+crash_strategy_growth = pd.concat(
+    [
+        case['strategy_growth'] for case in crash_case
+    ], axis = 1
+)
+
+crash_strategy_growth = crash_strategy_growth.rename(
+    columns = {
+        0:'Market crash of 5%',
+        1:'Market crash of 10%',
+        2:'Market crash of 20%',
+        3:'Market crash of 35.1%',
+    }
+)
+
+crash_terminal_return = [
+    case['Total return'] for case in crash_case
+]
+
+crash_terminal_return_df = pd.DataFrame(
+    {
+    'Shock level': ['5%', '10%', '20%','35.1%'] ,
+    'Terminal return':crash_terminal_return,
+    }
+).set_index('Shock level')
+
+crash_terminal_return_df.plot(kind='bar')
+
+fig, ax = plt.subplot_mosaic([
+    ['A', 'B'],
+], figsize=(11, 5))
+
+crash_strategy_growth.plot(ax=ax['A'])
+ax['A'].set_title(f'The market crash case: terminal return on {latest_long_date.date()}')
+ax['A'].set_xlabel('Date')
+ax['A'].set_ylabel('Growth of $1')
+ax['A'].legend()
+
+crash_terminal_return_df.plot(kind='bar',ax=ax['B'])
+ax['B'].set_title('Terminal return')
+ax['B'].set_xlabel('Market crash')
+ax['B'].set_ylabel('Terminal return')
+ax['B'].bar_label(ax['B'].containers[0], labels=[f'{value:.1%}'
+                                                 for value in ax['B']
+                  .containers[0].datavalues])
+ax['B'].legend()
+ax['B'].axhline(y=0,linestyle='--', color='black')
+
+plt.tight_layout()
+plt.show()
+
+# stress test decision
+stress_summary = pd.DataFrame({
+    'Stress test': ['Baseline', 'Trading cost', 'Market crash'],
+
+    'Worst terminal return': [
+    baseline['strategy_terminal_return'],
+    cost_terminal_return_df.min().iloc[0],
+    crash_terminal_return_df.min().iloc[0]]
+})
+
+stress_summary['Decision'] = np.where(
+(stress_summary['Worst terminal return'] > 0),
+    'Pass', 'Fail'
+)
+
+if (stress_summary['Decision'] == 'Pass').all():
+    print('The strategy passes all stress tests.')
+else:
+    print('The strategy fails at least one stress test.')
