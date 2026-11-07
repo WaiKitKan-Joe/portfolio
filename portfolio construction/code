@@ -1,0 +1,305 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import statsmodels.api as sm
+from docx import Document
+from docx.shared import Pt
+import seaborn as sns
+
+import mplfinance as mpf
+
+# test periods\
+# 2023-01-01 to 2023-12-31
+# 2024-01-01 to 2024-12-31
+# 2025-01-01 to 2025-12-31
+# 2026-01-01 to 2026-11-08 (today)
+
+start_date = '2023-01-01'
+end_date = '2026-11-08'
+
+symbols = ['QQQ', 'VOO', 'IWM', 'EFA', 'TIPS']
+
+dfs = []
+
+
+for symbol in symbols:
+    df = yf.download(symbol, start=start_date, end=end_date)
+    df.columns = df.columns.droplevel(1)
+
+    price = df['Close']
+    df[f'Return_{symbol}'] = price.pct_change(fill_method=None)
+    df[f'Rolling_vol_{symbol}'] =df[f'Return_{symbol}'].rolling(20).std() * np.sqrt(252)
+
+    df[f'Inverse_vol_{symbol}'] = 1 / df[f'Rolling_vol_{symbol}']
+
+    dfs.append(df[[
+        f'Inverse_vol_{symbol}',
+        f'Rolling_vol_{symbol}',
+        f'Return_{symbol}'
+    ]])
+
+merged_df = pd.concat(dfs, axis=1)
+
+inverse_vol_columns = [
+    f'Inverse_vol_{symbol}' for symbol in symbols
+]
+
+weight_columns = [
+    f'Weight_{symbol}' for symbol in symbols
+]
+
+merged_df[weight_columns] = (
+    merged_df[inverse_vol_columns].div(
+        merged_df[inverse_vol_columns].sum(axis=1), axis=0
+    ).to_numpy()
+)
+
+# check if it's 1
+merged_df['Weight sum'] = merged_df[weight_columns].sum(axis=1)
+
+return_columns = [
+    f'Return_{symbol}' for symbol in symbols
+]
+
+merged_df['Portfolio_return'] = (
+    merged_df[return_columns].to_numpy()
+    * merged_df[weight_columns].shift(1).to_numpy()
+).sum(axis=1)
+
+valid_start = merged_df['Portfolio_return'].first_valid_index()
+
+merged_df = merged_df.loc[valid_start:]
+
+merged_df['Portfolio_growth'] = (
+    1 + merged_df['Portfolio_return'].fillna(0)
+).cumprod()
+
+terminal_portfolio_return = merged_df['Portfolio_growth'].iloc[-1] - 1
+
+print(f'Between {merged_df.index[0].date()} and {merged_df.index[-1].date()},')
+print(f'The terminal portfolio return is {terminal_portfolio_return:.3%}.')
+
+# use VOO as benchmark
+
+voo_df = yf.download(
+    'VOO',
+    start=start_date,
+    end=end_date
+)
+
+voo_df.columns = voo_df.columns.droplevel(1)
+
+voo_df['Return'] = voo_df['Close'].pct_change(fill_method=None)
+voo_df = voo_df.reindex(merged_df.index)
+
+voo_growth = (1 + voo_df['Return'].fillna(0)).cumprod()
+
+terminal_voo_return = voo_growth.iloc[-1] - 1
+
+print(f'\nBetween {voo_df.index[0].date()} and {voo_df.index[-1].date()},')
+print(f'VOO terminal return: {terminal_voo_return:.4%}')
+
+# plot the growth - Joe's portfolio vs SPY
+merged_df['Portfolio_growth'].plot(
+    label="Joe's portfolio",
+    figsize=(8, 5)
+)
+
+voo_growth.plot(label='VOO')
+
+plt.ylabel('Growth of $1')
+plt.xlabel('Date')
+plt.title("Joe's Portfolio Growth vs VOO")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# calculate the sharpe ratio
+rf = yf.download(
+    '^IRX',
+    start=start_date,
+    end=end_date
+)
+rf.columns = rf.columns.droplevel(1)
+
+daily_rf = rf['Close'] / 100 / 252
+daily_rf = daily_rf.reindex(merged_df.index).ffill()
+
+portfolio_excess_return = merged_df['Portfolio_return'] - daily_rf
+portfolio_annual_excess_return = portfolio_excess_return.mean() * 252
+portfolio_annual_volatility = merged_df['Portfolio_return'].std() * np.sqrt(252)
+
+portfolio_sharpe_ratio = portfolio_annual_excess_return / portfolio_annual_volatility
+print(f'Portfolio sharpe ratio: {portfolio_sharpe_ratio:.4f}')
+
+
+# calculate VOO sharpe ratio
+
+VOO_excess_return = voo_df['Return'] - daily_rf
+VOO_annual_excess_return = VOO_excess_return.mean() * 252
+VOO_annual_volatility = voo_df['Return'].std() * np.sqrt(252)
+
+VOO_sharpe_ratio = VOO_annual_excess_return / VOO_annual_volatility
+print(f'VOO sharpe ratio: {VOO_sharpe_ratio:.4f}')
+
+# analyze the correlation of each asset by ploting the heatmap
+correlation_matrix = (
+    merged_df[return_columns]
+    .dropna().corr()
+).round(4)
+
+
+# compare the data
+
+sharpe_ratio_comparison_matrix = pd.DataFrame({
+    'Item': ["Joe's Portfolio", 'VOO'],
+    'Sharpe ratio': [
+        portfolio_sharpe_ratio,
+        VOO_sharpe_ratio
+    ],
+    'Excess return': [
+        portfolio_annual_excess_return,
+        VOO_annual_excess_return
+    ]
+}).set_index('Item')
+
+
+print('\ncomparison matrix:')
+print(
+    f'\nInvestment period: '
+    f'{merged_df.index[0].date()} to '
+    f'{merged_df.index[-1].date()}'
+)
+print(sharpe_ratio_comparison_matrix)
+
+# Sharpe-ratio comparison
+sharpe_ratio_comparison_matrix['Sharpe ratio'].plot(
+    kind='bar',
+    figsize=(8, 5),
+    color=['steelblue', 'darkgreen']
+)
+
+plt.title('Sharpe Ratio Comparison')
+plt.ylabel('Sharpe Ratio')
+plt.xlabel('')
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+
+# Annualized excess-return comparison
+(
+    sharpe_ratio_comparison_matrix['Excess return'] * 100
+).plot(
+    kind='bar',
+    figsize=(8, 5),
+    color=['steelblue', 'darkgreen']
+)
+
+plt.title('Annualized Excess Return Comparison')
+plt.ylabel('Annualized Excess Return (%)')
+plt.xlabel('')
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+
+# Correlation heatmap
+sns.heatmap(correlation_matrix,annot=True)
+
+plt.title("Asset Return Correlation in Joe's Portfolio")
+plt.xlabel('Assets')
+plt.ylabel('Assets')
+plt.tight_layout()
+plt.show()
+
+
+# fit the model (VOO as benchmark)
+
+voo_regression_df = pd.concat(
+    [
+        portfolio_excess_return.rename('Portfolio'),
+        VOO_excess_return.rename('VOO')
+    ],
+    axis=1
+).dropna()
+
+y_voo = voo_regression_df['Portfolio']
+x_voo = sm.add_constant(voo_regression_df['VOO'])
+
+voo_model = sm.OLS(y_voo, x_voo).fit(
+    cov_type='HAC',
+    cov_kwds={'maxlags': 5}
+)
+
+print(voo_model.summary())
+
+
+# save the stats to a word file
+output_path = r"C:\Users\npgps\Downloads"
+
+doc = Document()
+
+run = doc.add_paragraph().add_run(
+    'VOO BENCHMARK\n\n'
+    + voo_model.summary().as_text()
+)
+
+run.font.name = 'Courier New'
+run.font.size = Pt(8)
+
+doc.save(
+    output_path + r'\portfolio_stats_summary.docx'
+)
+
+# return contribution
+
+# Calculate daily return contributions
+for symbol in symbols:
+    merged_df[f'Contribution_{symbol}'] = (
+        merged_df[f'Weight_{symbol}'].shift(1)
+        * merged_df[f'Return_{symbol}']
+    )
+
+contribution_columns = [
+    f'Contribution_{symbol}' for symbol in symbols
+]
+
+# Annualized arithmetic return contributions
+annualized_contributions = (
+    merged_df[contribution_columns].mean() * 252
+)
+
+# Clean index labels
+annualized_contributions.index = symbols
+
+print('\nAnnualized arithmetic return contributions:')
+print(
+    annualized_contributions
+    .sort_values(ascending=False)
+    .map(lambda x: f'{x:.3%}')
+)
+
+# Plot as percentages
+(annualized_contributions * 100).plot(
+    kind='bar',
+    figsize=(8, 5),
+    color='steelblue'
+)
+
+plt.title(
+    f'Annualized Return Contributions\n'
+    f'{merged_df.index[0].date()} to '
+    f'{merged_df.index[-1].date()}'
+)
+plt.ylabel('Annualized Return Contribution (%)')
+plt.xlabel('Asset')
+plt.axhline(0, color='black', linewidth=1)
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+
+plt.close('all')
+
