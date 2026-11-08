@@ -24,22 +24,45 @@ dfs = []
 
 
 for symbol in symbols:
-    df = yf.download(symbol, start=start_date, end=end_date)
+    df = yf.download(
+        symbol,
+        start=start_date,
+        end=end_date,
+        auto_adjust=True,
+        progress=False
+    )
+
     df.columns = df.columns.droplevel(1)
 
-    price = df['Close']
-    df[f'Return_{symbol}'] = price.pct_change(fill_method=None)
-    df[f'Rolling_vol_{symbol}'] =df[f'Return_{symbol}'].rolling(20).std() * np.sqrt(252)
+    df[f"Return_{symbol}"] = (
+        df["Close"].pct_change(fill_method=None)
+    )
 
-    df[f'Inverse_vol_{symbol}'] = 1 / df[f'Rolling_vol_{symbol}']
+    df[f"Rolling_vol_{symbol}"] = (
+        df[f"Return_{symbol}"].rolling(20).std()
+        * np.sqrt(252)
+    )
+
+    df[f"Inverse_vol_{symbol}"] = (
+        1 / df[f"Rolling_vol_{symbol}"]
+    )
+
+    df[f"Volume_{symbol}"] = df["Volume"]
+
+    df[f"Dollar_volume_{symbol}"] = (
+        df["Close"] * df["Volume"]
+    )
 
     dfs.append(df[[
-        f'Inverse_vol_{symbol}',
-        f'Rolling_vol_{symbol}',
-        f'Return_{symbol}'
+        f"Inverse_vol_{symbol}",
+        f"Rolling_vol_{symbol}",
+        f"Return_{symbol}",
+        f"Volume_{symbol}",
+        f"Dollar_volume_{symbol}"
     ]])
 
 merged_df = pd.concat(dfs, axis=1)
+
 
 inverse_vol_columns = [
     f'Inverse_vol_{symbol}' for symbol in symbols
@@ -54,6 +77,8 @@ merged_df[weight_columns] = (
         merged_df[inverse_vol_columns].sum(axis=1), axis=0
     ).to_numpy()
 )
+
+# plot the weight
 
 # check if it's 1
 merged_df['Weight sum'] = merged_df[weight_columns].sum(axis=1)
@@ -110,7 +135,7 @@ voo_growth.plot(label='VOO')
 
 plt.ylabel('Growth of $1')
 plt.xlabel('Date')
-plt.title("Joe's Portfolio Growth vs VOO")
+plt.title(f"Joe's Portfolio Growth vs VOO between {start_date} and {end_date}")
 plt.legend()
 plt.tight_layout()
 plt.show()
@@ -303,3 +328,22 @@ plt.show()
 
 plt.close('all')
 
+# plot volumne
+volume_columns = [
+    f"Volume_{symbol}" for symbol in symbols
+]
+
+merged_df.loc[
+    "2026-01-01":'2026-11-01',
+    volume_columns
+].median().plot(
+    kind="bar",
+    figsize=(8, 5)
+)
+
+plt.title("Median Daily Trading Volume from 2026-01-01 to 2026-11-01")
+plt.xlabel("Asset")
+plt.ylabel("Average Daily Volume")
+plt.xticks(rotation=0)
+plt.tight_layout()
+plt.show()
