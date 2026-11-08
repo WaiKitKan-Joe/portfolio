@@ -1,1 +1,112 @@
+import numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+import pandas as pd
 
+from datetime import date
+
+
+start_date = '2023-01-01'
+end_date = '2026-11-08'
+
+rf = yf.download('^IRX',start_date,end_date)
+rf.columns = rf.columns.droplevel(1)
+rf['Daily rf'] = rf['Close'] / 100 / 252
+
+df_voo = yf.download('VOO', start=start_date, end=end_date)
+df_voo.columns = df_voo.columns.droplevel(1)
+
+df_voo['Return'] = df_voo['Close'].pct_change()
+df_voo['Excess return'] = df_voo['Return'] - rf['Daily rf']
+
+# sharpe ratio (2023)
+p1_er = df_voo['Excess return'].loc['2023-01-01':'2023-12-31']
+p1_mean_annualized_er = p1_er.mean() * 252
+p1_annualized_sd = df_voo['Return'].loc['2023-01-01':'2023-12-31'].std() * np.sqrt(252)
+
+p1_sharpe = p1_mean_annualized_er / p1_annualized_sd
+
+# sharpe ratio (2024)
+p2_er = df_voo['Excess return'].loc['2024-01-01':'2024-12-31']
+p2_mean_annualized_er = p2_er.mean() * 252
+p2_annualized_sd = df_voo['Return'].loc['2024-01-01':'2024-12-31'].std() * np.sqrt(252)
+
+p2_sharpe = p2_mean_annualized_er / p2_annualized_sd
+
+
+# sharpe ratio (2025)
+p3_er = df_voo['Excess return'].loc['2025-01-01':'2025-12-31']
+p3_mean_annualized_er = p3_er.mean() * 252
+p3_annualized_sd = df_voo['Return'].loc['2025-01-01':'2025-12-31'].std() * np.sqrt(252)
+
+p3_sharpe = p3_mean_annualized_er / p3_annualized_sd
+
+
+# sharpe ratio (2026)
+p4_er = df_voo['Excess return'].loc['2026-01-01':'2026-11-08']
+p4_mean_annualized_er = p4_er.mean() * 252
+p4_annualized_sd = df_voo['Return'].loc['2026-01-01':'2026-11-08'].std() * np.sqrt(252)
+
+p4_sharpe = p4_mean_annualized_er / p4_annualized_sd
+
+# comparison df
+
+comparison_matrix = pd.DataFrame({
+    'Date': ['2023', '2024', '2025', '2026'],
+    'Sharpe ratio': [p1_sharpe, p2_sharpe, p3_sharpe, p4_sharpe]
+}).set_index('Date')
+
+
+er_comparison_matrix = pd.DataFrame({
+    'Date': ['2023', '2024', '2025', '2026'],
+    'VOO excess return': [p1_mean_annualized_er, p2_mean_annualized_er, p3_mean_annualized_er, p4_mean_annualized_er]
+}).set_index('Date')
+
+
+comparison_matrix.plot(kind='bar')
+plt.title('VOO Annual Sharpe Ratio from 2023 to 2024')
+plt.xlabel('Year')
+plt.ylabel('Sharpe Ratio')
+plt.tight_layout()
+plt.show()
+
+# plot close price
+df_voo["Close"].plot(
+    figsize=(8, 5),
+    color="steelblue",
+    linewidth=1.5
+)
+
+plt.title("VOO Closing Price")
+plt.xlabel("Date")
+plt.ylabel("Adjusted Closing Price (USD)")
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# combine the plots
+fig, ax = plt.subplot_mosaic(
+   [
+       ['Closing price', 'sharpe'],
+       ['er','er']
+   ], figsize=[10, 5]
+)
+
+df_voo["Close"].plot(ax=ax['Closing price'])
+comparison_matrix.plot(kind='bar', ax=ax['sharpe'])
+
+ax['sharpe'].set_title('VOO Annual Sharpe Ratio from 2023 to 08-11-2026')
+ax['sharpe'].set_xlabel('Year')
+ax['sharpe'].set_ylabel('Sharpe Ratio')
+
+ax['Closing price'].set_title("VOO Closing Price")
+ax['Closing price'].set_xlabel("Date")
+ax['Closing price'].set_ylabel("Closing Price (USD)")
+
+er_comparison_matrix.plot(ax=ax['er'],kind='bar')
+ax['er'].set_title("VOO excess return")
+ax['er'].set_xlabel("Date")
+ax['er'].set_ylabel("Excess return (%)")
+
+plt.tight_layout()
+plt.show()
