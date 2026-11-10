@@ -1,0 +1,292 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from scipy.optimize import minimize
+
+
+tickers = ["VOO", "VXUS", "TLT", "TIP", "GLD", "BIL"]
+
+start_date = "2018-01-01"
+trading_days = 252
+train_ratio = 0.70
+
+lookback_days = int(252 * 3)
+rebalance_days = 10
+
+maximum_weight = 1
+minimum_weight = 0
+
+
+prices = yf.download(
+    tickers,
+    start=start_date,
+)["Close"].dropna()
+
+
+rf = yf.download(
+    "^IRX",
+    start=start_date,
+)["Close"]
+
+
+returns = prices.pct_change(
+    fill_method=None
+).dropna()
+
+
+daily_rf = rf / 100 / trading_days
+
+
+split_index = int(
+    len(returns) * train_ratio
+)
+
+
+train_returns = returns.iloc[:split_index]
+test_returns = returns.iloc[split_index:]
+
+
+number_of_tickers = len(tickers)
+
+initial_weights = np.repeat(
+    1 / number_of_tickers,
+    number_of_tickers
+)
+
+bounds = [
+    (minimum_weight, maximum_weight)
+] * number_of_tickers
+
+
+constraint = {
+    "type": "eq",
+    "fun": lambda weights: weights.sum() - 1
+}
+
+
+# Rolling re-optimization
+
+target_weights_history = pd.DataFrame()
+portfolio_returns = pd.DataFrame()
+
+current_weights = None
+
+
+for i, date in enumerate(test_returns.index):
+
+    if i % rebalance_days == 0:
+
+        available_returns = (
+            returns.loc[returns.index < date]
+            .tail(lookback_days)
+        )
+
+        expected_return = (
+            available_returns.mean()
+            * trading_days
+        )
+
+        covariance_matrix = (
+            available_returns.cov()
+            * trading_days
+        )
+
+        available_rf = (
+            daily_rf.squeeze()
+            .sort_index()
+            .reindex(
+                available_returns.index,
+                method="ffill"
+            )
+        )
+
+        annual_rf = (
+            available_rf.mean()
+            * trading_days
+        ).squeeze()
+
+
+        def negative_sharpe_ratio(weights):
+
+            portfolio_return = (
+                weights @ expected_return
+            )
+
+            portfolio_volatility = np.sqrt(
+                weights.T
+                @ covariance_matrix
+                @ weights
+            )
+
+            return -(
+                portfolio_return - annual_rf
+            ) / portfolio_volatility
+
+
+        if current_weights is None:
+            starting_weights = initial_weights
+        else:
+            starting_weights = current_weights
+
+
+        result = minimize(
+            negative_sharpe_ratio,
+            starting_weights,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraint
+        )
+
+
+        if result.success:
+            current_weights = result.x.copy()
+        else:
+            print(
+                f"Optimization failed on {date}: "
+                f"{result.message}"
+            )
+
+
+        target_weights_history.loc[
+            date, tickers
+        ] = current_weights
+
+
+    daily_asset_returns = test_returns.loc[date]
+
+    daily_portfolio_return = (
+        current_weights @ daily_asset_returns
+    )
+
+    portfolio_returns.loc[
+        date, "Portfolio return"
+    ] = daily_portfolio_return
+
+    current_weights = (
+        current_weights
+        * (1 + daily_asset_returns)
+        / (1 + daily_portfolio_return)
+    )
+
+
+# Calculate portfolio Sharpe ratio
+
+portfolio_return = (
+    portfolio_returns["Portfolio return"]
+    .dropna()
+)
+
+
+risk_free = (
+    daily_rf.squeeze()
+    .sort_index()
+    .reindex(
+        portfolio_return.index,
+        method="ffill"
+    )
+)
+
+
+portfolio_excess_return = (
+    portfolio_return - risk_free
+).dropna()
+
+
+portfolio_volatility = (
+    portfolio_excess_return.std()
+)
+
+
+portfolio_sharpe = (
+    portfolio_excess_return.mean()
+    / portfolio_volatility
+    * np.sqrt(trading_days)
+)
+
+
+print(
+    f"Portfolio Sharpe: "
+    f"{portfolio_sharpe:.4f}"
+)
+
+
+# Calculate VOO Sharpe ratio
+
+voo_excess_return = (
+    test_returns["VOO"] - risk_free
+)
+
+
+voo_sharpe = (
+    voo_excess_return.mean()
+    / voo_excess_return.std()
+    * np.sqrt(trading_days)
+)
+
+
+print(
+    f"VOO Sharpe: "
+    f"{voo_sharpe:.4f}"
+)
+
+
+# Plot the growth of $1
+
+portfolio_growth = (
+    1
+    + portfolio_returns[
+        "Portfolio return"
+    ].fillna(0)
+).cumprod()
+
+
+voo_growth = (
+    1
+    + test_returns["VOO"].fillna(0)
+).cumprod()
+
+
+ax = voo_growth.plot(
+    figsize=(8, 5),
+    label="VOO"
+)
+
+
+portfolio_growth.plot(
+    ax=ax,
+    label="Joe's Optimized Portfolio"
+)
+
+
+plt.title("Out-of-Sample Growth of $1")
+plt.xlabel("Date")
+plt.ylabel("Portfolio vs VOO Value")
+plt.legend()
+plt.grid(
+    axis="y",
+    linestyle=":",
+    alpha=0.5
+)
+plt.tight_layout()
+plt.show()
+
+
+# Plot the target-weight changes
+
+target_weights_history.plot(
+    subplots=True,
+    layout=(3, 2),
+    figsize=(10, 5),
+    grid=True
+)
+
+
+plt.suptitle(
+    "Target Portfolio Weights at Each Rebalancing Date",
+    fontsize=14
+)
+
+plt.tight_layout()
+plt.show()
