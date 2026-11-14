@@ -1,0 +1,184 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+import seaborn as sns
+
+
+############### tickers = [ ...] # here are the chosen asset classes for systematic monethly rebalancing and selection, but they are removed here.#######
+
+benchmark = 'VOO'
+start_date = '2024-01-01'
+
+########### fast_window = ## removed content ###########
+########### medium_window = ## removed content ###########
+########### long_window = ## removed content ###########
+
+optimization_lookback = 252
+transaction_cost = 0.001
+trading_days = 252
+top_n = 8
+portfolio_value = 10000
+
+prices = yf.download(tickers, start=start_date)['Close'].dropna(axis=1, how='all').squeeze()
+voo_prices = yf.download(benchmark, start=start_date)['Close'].squeeze()
+rf = yf.download('^IRX', start=start_date)['Close'].squeeze()
+daily_rf =  rf.reindex(prices.index).ffill() / 100 / trading_days
+
+returns = prices.pct_change(fill_method=None)
+
+rebalance_dates = prices.index.to_series().resample('ME').last()
+
+fast_ma = prices.rolling(fast_window).mean()
+medium_ma = prices.rolling(medium_window).mean()
+long_ma = prices.rolling(long_window).mean()
+
+long_signal = (fast_ma > medium_ma) & (medium_ma > long_ma)
+momentum_score = fast_ma / medium_ma - 1 + medium_ma / long_ma - 1
+
+# maximize the sharpe
+def negative_sharpe(
+        weights,
+        expected_returns,
+        covariance_matrix,
+        annual_rf
+):
+    portfolio_return = expected_returns @ weights
+
+    portfolio_volatility = np.sqrt(
+        weights.T @ covariance_matrix @ weights
+    )
+
+    return -(
+        portfolio_return - annual_rf
+    ) / portfolio_volatility
+
+weights_by_date = {}
+
+###################################### parts of the codes are removed here ####################################
+  
+    result = minimize(
+        negative_sharpe,
+        initial_weights,
+        args=(expected_returns, covariance_matrix, annual_rf),
+        constraints=constraints,
+        method='SLSQP',
+        bounds=bounds
+    )
+
+    optimal_weights = result.x
+
+    weights_by_date[date] = pd.Series(optimal_weights, index=selected)
+
+
+weights_by_date = pd.concat(weights_by_date, axis=1)
+weights_by_date =weights_by_date.T
+weights_by_date = weights_by_date.reindex(returns.index).ffill().fillna(0)
+
+weights_with_cash = weights_by_date.copy()
+
+weights_with_cash["CASH"] = (
+    1 - weights_with_cash.sum(axis=1)
+).clip(lower=0)
+
+turnover = (
+    weights_with_cash.diff()
+    .abs()
+    .sum(axis=1)
+    / 2
+)
+
+gross_return = (weights_by_date.shift(1) * returns).sum(axis=1)
+turnover = weights_by_date.diff().abs().sum(axis=1) / 2
+trading_cost = turnover.shift(1).fillna(0) * transaction_cost
+strategy_return = gross_return - trading_cost
+strategy_growth = (1+strategy_return.fillna(0)).cumprod()
+
+voo_returns = voo_prices.pct_change(fill_method=None)
+voo_growth = (1+voo_returns).cumprod()
+
+# plot the growth
+plt.figure(figsize=(10, 5))
+plt.plot(
+    strategy_growth,
+    label='Joe\'s Strategy',
+)
+
+plt.plot(
+    voo_growth,
+    label='VOO'
+)
+
+plt.title('Joe\'s Strategy vs VOO Growth')
+plt.xlabel('Date')
+plt.ylabel('Growth of $1')
+plt.grid(alpha=0.3)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+plt.close()
+
+# calculate the sharpe ratios
+annualized_rf_strategy = daily_rf.reindex(strategy_return.index).mean() * trading_days
+annualized_strategy_return = strategy_return.mean() * trading_days
+strategy_sd = strategy_return.std() * np.sqrt(trading_days)
+
+strategy_sharpe = (annualized_strategy_return - annualized_rf_strategy) / strategy_sd
+
+annualized_rf_voo = daily_rf.reindex(voo_returns.index).mean() * trading_days
+annualized_voo_return = voo_returns.mean() * trading_days
+voo_sd = voo_returns.std() * np.sqrt(trading_days)
+
+voo_sharpe = (annualized_voo_return - annualized_rf_voo) / voo_sd
+
+print(f'\nStrategy sharpe: {strategy_sharpe:.4f}')
+print(f'VOO sharpe: {voo_sharpe:.4f}')
+
+# plot the correlation heatmap of the selected assets (latest)
+selected_corr =  returns[selected].loc[:date].tail(optimization_lookback).corr()
+
+sns.heatmap(selected_corr, annot=True, cmap='coolwarm', fmt='.3f')
+plt.title('Correlation of Selected Assets')
+plt.tight_layout()
+plt.show()
+
+# VaR analysis
+confidence = 0.95
+daily_var = -strategy_return.dropna().quantile(1 - confidence)
+dollar_var = daily_var * portfolio_value
+
+monthly_return = (1+strategy_return.fillna(0)).resample('ME').prod() - 1
+monthly_var = -monthly_return.quantile(1 - confidence)
+monthly_dollar_var = (monthly_var * portfolio_value)
+
+print(f'\nDaily VaR: {daily_var:.4f}')
+print(f'Daily dollar VaR: ${dollar_var:.4f}')
+print(f'Monthly VaR: {monthly_var:.4f}')
+print(f'Monthly dollar VaR: ${monthly_dollar_var:.4f}')
+
+# expected shortfall analysis
+expected_shortfall_daily = - strategy_return[
+    strategy_return <= -daily_var
+].mean()
+daily_expected_shortfall = expected_shortfall_daily * portfolio_value
+
+expected_shortfall_monthly = - monthly_return[ monthly_return <= -monthly_var].mean()
+monthly_expected_shortfall = expected_shortfall_monthly * portfolio_value
+
+print(f'\n Daily dollar expected shortfall: ${daily_expected_shortfall:.4f}')
+print(f'Monthly expected shortfall: ${monthly_expected_shortfall:.4f}')
+
+# win rate analysis
+daily_win_rate = (strategy_return.dropna() > 0).mean()
+monthly_win_rate = (monthly_return > 0).mean()
+
+print(f'\nDaily win rate: {daily_win_rate:.4%}')
+print(f'Monthly win rate: {monthly_win_rate:.4%}')
+
+# max. drawdown analysis
+drawdown = strategy_growth / strategy_growth.cummax() - 1
+max_drawdown = drawdown.min()
+
+print(f'\nMax Drawdown: {max_drawdown:.4%}')
