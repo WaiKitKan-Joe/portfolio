@@ -1,3 +1,22 @@
+"""
+Momentum-Based Monthly Portfolio Selection and Optimization Strategy
+
+Author: KAN Wai Kit
+Date prepared: 15 November 2026
+Version: 1.0
+
+This project was independently designed and implemented by KAN Wai Kit.
+
+The published code is an abbreviated demonstration version. Selected
+investment-universe definitions, model parameters, and implementation
+details have been omitted to protect the author's original methodology.
+
+The code and results are provided for educational and portfolio-
+demonstration purposes only and do not constitute investment advice.
+
+Copyright © 2026 KAN Wai Kit. All rights reserved.
+"""
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
