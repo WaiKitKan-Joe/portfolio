@@ -92,8 +92,8 @@ weights_by_date = {}
 
 
 weights_by_date = pd.concat(weights_by_date, axis=1)
-weights_by_date =weights_by_date.T
-weights_by_date = weights_by_date.reindex(returns.index).ffill().fillna(0)
+weights_by_date =weights_by_date.T.fillna(0)
+weights_by_date = weights_by_date.reindex(returns.index).ffill()
 
 weights_with_cash = weights_by_date.copy()
 
