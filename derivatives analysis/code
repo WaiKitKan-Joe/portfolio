@@ -1,0 +1,1131 @@
+from scipy.stats import norm
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import matplotlib.pyplot as plt
+
+
+# ----------------------------------------
+# Settings
+# ----------------------------------------
+
+np.random.seed(42)
+
+ticker = "GOOG"
+period = "4y"
+
+notional = 1000.0
+coupon_rate = 0.12
+maturity = 1.0
+observations_per_year = 4
+
+simulations = 5000
+weekly_simulations = 2000
+
+steps = 252
+dt = maturity / steps
+
+# Heston assumptions
+kappa = 2.0
+vol_of_variance = 0.50
+heston_correlation = -0.70
+
+observation_times = np.array([
+    0.25,
+    0.50,
+    0.75,
+    1.00
+])
+
+observation_steps = (
+    observation_times * steps
+).astype(int)
+
+
+# ----------------------------------------
+# Economic and market indicators
+# ----------------------------------------
+
+ticker_map = {
+    "GOOG": "GOOG",
+    "VIX": "^VIX",
+    "3M Treasury": "^IRX",
+    "10Y Treasury": "^TNX",
+    "30Y Treasury": "^TYX",
+    "S&P 500": "^GSPC",
+    "Nasdaq": "^IXIC",
+    "US Dollar": "DX-Y.NYB",
+    "Gold": "GC=F",
+    "Oil": "CL=F",
+    "Copper": "HG=F",
+    "High-Yield Bonds": "HYG",
+    "Investment-Grade Bonds": "LQD",
+    "Long Treasury Bonds": "TLT",
+    "Inflation-Protected Bonds": "TIP"
+}
+
+
+# ----------------------------------------
+# Download data
+# ----------------------------------------
+
+raw_data = yf.download(
+    list(ticker_map.values()),
+    period=period,
+    interval="1d",
+    auto_adjust=True,
+    progress=False
+)
+
+close = raw_data["Close"].rename(
+    columns={
+        yahoo_ticker: name
+        for name, yahoo_ticker
+        in ticker_map.items()
+    }
+)
+
+close = close.ffill().dropna()
+
+issue_spot = float(close["GOOG"].iloc[-1])
+
+goog_returns = np.log(
+    close["GOOG"]
+    / close["GOOG"].shift(1)
+).dropna()
+
+historical_volatility = float(
+    goog_returns.std(ddof=1)
+    * np.sqrt(252)
+)
+
+close["GOOG Variance"] = (
+    goog_returns
+    .rolling(20)
+    .var()
+    * 252
+)
+
+weekly = (
+    close
+    .resample("W-FRI")
+    .last()
+    .dropna()
+)
+
+risk_free_rate = (
+    float(weekly["3M Treasury"].iloc[-1])
+    / 100
+)
+
+
+# ----------------------------------------
+# Dividend yield
+# ----------------------------------------
+
+goog = yf.Ticker(ticker)
+dividends = goog.dividends
+
+annual_dividend = (
+    float(dividends.tail(4).sum())
+    if len(dividends) > 0
+    else 0.0
+)
+
+dividend_yield = np.log1p(
+    annual_dividend / issue_spot
+)
+
+
+# ----------------------------------------
+# Contract levels
+# ----------------------------------------
+
+autocall_level = issue_spot
+barrier_level = 0.70 * issue_spot
+
+
+# ----------------------------------------
+# Common random numbers
+# ----------------------------------------
+
+rng = np.random.default_rng(42)
+
+z_stock_matrix = rng.standard_normal(
+    (steps, simulations)
+)
+
+z_independent_matrix = rng.standard_normal(
+    (steps, simulations)
+)
+
+
+# ----------------------------------------
+# Heston autocall pricing function
+# ----------------------------------------
+
+def price_autocall(
+    current_spot,
+    volatility,
+    interest_rate,
+    reference_spot,
+    simulation_count=simulations,
+    return_details=False
+):
+
+    initial_variance = volatility**2
+    long_run_variance = volatility**2
+
+    stock = np.full(
+        simulation_count,
+        current_spot
+    )
+
+    variance = np.full(
+        simulation_count,
+        initial_variance
+    )
+
+    present_values = np.zeros(
+        simulation_count
+    )
+
+    autocalled = np.zeros(
+        simulation_count,
+        dtype=bool
+    )
+
+    payment_times = np.full(
+        simulation_count,
+        maturity
+    )
+
+    model_autocall_level = reference_spot
+    model_barrier_level = (
+        0.70 * reference_spot
+    )
+
+    for step in range(1, steps + 1):
+
+        z_stock = z_stock_matrix[
+            step - 1,
+            :simulation_count
+        ]
+
+        z_independent = z_independent_matrix[
+            step - 1,
+            :simulation_count
+        ]
+
+        z_variance = (
+            heston_correlation * z_stock
+            + np.sqrt(
+                1 - heston_correlation**2
+            ) * z_independent
+        )
+
+        previous_variance = np.maximum(
+            variance,
+            0
+        )
+
+        variance = np.maximum(
+            variance
+            + kappa
+            * (
+                long_run_variance
+                - previous_variance
+            )
+            * dt
+            + vol_of_variance
+            * np.sqrt(
+                previous_variance * dt
+            )
+            * z_variance,
+            0
+        )
+
+        stock *= np.exp(
+            (
+                interest_rate
+                - dividend_yield
+                - 0.5 * previous_variance
+            )
+            * dt
+            + np.sqrt(
+                previous_variance * dt
+            )
+            * z_stock
+        )
+
+        if step in observation_steps:
+
+            index = np.where(
+                observation_steps == step
+            )[0][0]
+
+            payment_time = (
+                observation_times[index]
+            )
+
+            newly_autocalled = (
+                (~autocalled)
+                & (
+                    stock
+                    >= model_autocall_level
+                )
+            )
+
+            payoff = notional * (
+                1
+                + coupon_rate
+                * payment_time
+            )
+
+            present_values[
+                newly_autocalled
+            ] = (
+                payoff
+                * np.exp(
+                    -interest_rate
+                    * payment_time
+                )
+            )
+
+            payment_times[
+                newly_autocalled
+            ] = payment_time
+
+            autocalled[
+                newly_autocalled
+            ] = True
+
+    not_autocalled = ~autocalled
+    final_prices = stock.copy()
+
+    total_coupon = (
+        notional
+        * coupon_rate
+        * maturity
+    )
+
+    maturity_payoffs = np.where(
+        final_prices
+        >= model_barrier_level,
+        notional + total_coupon,
+        notional
+        * final_prices
+        / reference_spot
+        + total_coupon
+    )
+
+    present_values[
+        not_autocalled
+    ] = (
+        maturity_payoffs[
+            not_autocalled
+        ]
+        * np.exp(
+            -interest_rate
+            * maturity
+        )
+    )
+
+    fair_value = present_values.mean()
+
+    if not return_details:
+        return fair_value
+
+    scenario_probabilities = np.array([
+        np.mean(
+            autocalled
+            & np.isclose(
+                payment_times,
+                0.25
+            )
+        ),
+        np.mean(
+            autocalled
+            & np.isclose(
+                payment_times,
+                0.50
+            )
+        ),
+        np.mean(
+            autocalled
+            & np.isclose(
+                payment_times,
+                0.75
+            )
+        ),
+        np.mean(
+            autocalled
+            & np.isclose(
+                payment_times,
+                1.00
+            )
+        ),
+        np.mean(
+            not_autocalled
+            & (
+                final_prices
+                >= model_barrier_level
+            )
+        ),
+        np.mean(
+            not_autocalled
+            & (
+                final_prices
+                < model_barrier_level
+            )
+        )
+    ])
+
+    return (
+        fair_value,
+        scenario_probabilities,
+        present_values
+    )
+
+
+# ----------------------------------------
+# Current value and scenario probabilities
+# ----------------------------------------
+
+(
+    current_fair_value,
+    scenario_probabilities,
+    path_payoffs
+) = price_autocall(
+    current_spot=issue_spot,
+    volatility=historical_volatility,
+    interest_rate=risk_free_rate,
+    reference_spot=issue_spot,
+    return_details=True
+)
+
+scenario_names = [
+    "Autocall Q1",
+    "Autocall Q2",
+    "Autocall Q3",
+    "Autocall Q4",
+    "Maturity above barrier",
+    "Maturity below barrier"
+]
+
+scenario_colors = [
+    "purple",
+    "green",
+    "orange",
+    "brown",
+    "steelblue",
+    "red"
+]
+
+print(f"GOOG spot price: ${issue_spot:,.2f}")
+print(
+    f"Product fair value: "
+    f"${current_fair_value:,.2f}"
+)
+
+print("\nScenario probabilities:")
+
+for name, probability in zip(
+    scenario_names,
+    scenario_probabilities
+):
+    print(f"{name}: {probability:.2%}")
+
+print(
+    f"Probability total: "
+    f"{scenario_probabilities.sum():.2%}"
+)
+
+
+# ----------------------------------------
+# Weekly fair-value history
+# ----------------------------------------
+# This reprices a newly issued one-year note
+# each week, with thresholds reset to spot.
+# ----------------------------------------
+
+weekly_fair_values = []
+
+for date, row in weekly.iterrows():
+
+    weekly_spot = float(row["GOOG"])
+
+    weekly_rate = max(
+        float(row["3M Treasury"])
+        / 100,
+        0
+    )
+
+    weekly_variance = max(
+        float(row["GOOG Variance"]),
+        0.0001
+    )
+
+    weekly_volatility = np.sqrt(
+        weekly_variance
+    )
+
+    fair_value = price_autocall(
+        current_spot=weekly_spot,
+        volatility=weekly_volatility,
+        interest_rate=weekly_rate,
+        reference_spot=weekly_spot,
+        simulation_count=weekly_simulations
+    )
+
+    weekly_fair_values.append(
+        fair_value
+    )
+
+weekly["Product Fair Value"] = (
+    weekly_fair_values
+)
+
+
+# ----------------------------------------
+# Economic-index correlations
+# ----------------------------------------
+
+changes = pd.DataFrame(
+    index=weekly.index
+)
+
+changes["Product"] = (
+    weekly["Product Fair Value"]
+    .pct_change()
+)
+
+percentage_change_columns = [
+    "VIX",
+    "S&P 500",
+    "Nasdaq",
+    "US Dollar",
+    "Gold",
+    "Oil",
+    "Copper",
+    "High-Yield Bonds",
+    "Investment-Grade Bonds",
+    "Long Treasury Bonds",
+    "Inflation-Protected Bonds",
+    "GOOG Variance"
+]
+
+for column in percentage_change_columns:
+
+    changes[column] = (
+        weekly[column]
+        .pct_change()
+    )
+
+for column in [
+    "3M Treasury",
+    "10Y Treasury",
+    "30Y Treasury"
+]:
+
+    changes[column] = (
+        weekly[column]
+        .diff()
+    )
+
+changes = changes.dropna()
+
+correlations = (
+    changes
+    .corr()["Product"]
+    .drop("Product")
+    .sort_values()
+)
+
+print("\nEconomic-index correlations:")
+print(correlations.round(3))
+
+
+# ----------------------------------------
+# Greek sensitivities
+# ----------------------------------------
+
+spot_grid = np.linspace(
+    0.60 * issue_spot,
+    1.30 * issue_spot,
+    25
+)
+
+spot_bump = 0.01 * issue_spot
+volatility_bump = 0.01
+rate_bump = 0.0001
+
+deltas = []
+gammas = []
+vegas = []
+rhos = []
+
+for spot in spot_grid:
+
+    base_value = price_autocall(
+        spot,
+        historical_volatility,
+        risk_free_rate,
+        issue_spot
+    )
+
+    spot_up = price_autocall(
+        spot + spot_bump,
+        historical_volatility,
+        risk_free_rate,
+        issue_spot
+    )
+
+    spot_down = price_autocall(
+        spot - spot_bump,
+        historical_volatility,
+        risk_free_rate,
+        issue_spot
+    )
+
+    volatility_up = price_autocall(
+        spot,
+        historical_volatility
+        + volatility_bump,
+        risk_free_rate,
+        issue_spot
+    )
+
+    volatility_down = price_autocall(
+        spot,
+        max(
+            historical_volatility
+            - volatility_bump,
+            0.01
+        ),
+        risk_free_rate,
+        issue_spot
+    )
+
+    rate_up = price_autocall(
+        spot,
+        historical_volatility,
+        risk_free_rate
+        + rate_bump,
+        issue_spot
+    )
+
+    rate_down = price_autocall(
+        spot,
+        historical_volatility,
+        risk_free_rate
+        - rate_bump,
+        issue_spot
+    )
+
+    delta = (
+        spot_up - spot_down
+    ) / (
+        2 * spot_bump
+    )
+
+    gamma = (
+        spot_up
+        - 2 * base_value
+        + spot_down
+    ) / (
+        spot_bump**2
+    )
+
+    # Per one volatility point
+    vega = (
+        volatility_up
+        - volatility_down
+    ) / 2
+
+    # Per one basis point
+    rho = (
+        rate_up - rate_down
+    ) / 2
+
+    deltas.append(delta)
+    gammas.append(gamma)
+    vegas.append(vega)
+    rhos.append(rho)
+
+
+# ----------------------------------------
+# Vega hedge using ATM straddle
+# ----------------------------------------
+
+product_vega = (
+    price_autocall(
+        issue_spot,
+        historical_volatility
+        + volatility_bump,
+        risk_free_rate,
+        issue_spot
+    )
+    - price_autocall(
+        issue_spot,
+        historical_volatility
+        - volatility_bump,
+        risk_free_rate,
+        issue_spot
+    )
+) / 2
+
+K = issue_spot
+T = maturity
+
+d1 = (
+    np.log(issue_spot / K)
+    + (
+        risk_free_rate
+        - dividend_yield
+        + 0.5
+        * historical_volatility**2
+    )
+    * T
+) / (
+    historical_volatility
+    * np.sqrt(T)
+)
+
+d2 = (
+    d1
+    - historical_volatility
+    * np.sqrt(T)
+)
+
+call_price = (
+    issue_spot
+    * np.exp(
+        -dividend_yield * T
+    )
+    * norm.cdf(d1)
+    - K
+    * np.exp(
+        -risk_free_rate * T
+    )
+    * norm.cdf(d2)
+)
+
+put_price = (
+    K
+    * np.exp(
+        -risk_free_rate * T
+    )
+    * norm.cdf(-d2)
+    - issue_spot
+    * np.exp(
+        -dividend_yield * T
+    )
+    * norm.cdf(-d1)
+)
+
+straddle_price = (
+    call_price + put_price
+)
+
+# Call Vega + put Vega
+straddle_vega = (
+    2
+    * issue_spot
+    * np.exp(
+        -dividend_yield * T
+    )
+    * norm.pdf(d1)
+    * np.sqrt(T)
+    / 100
+)
+
+hedge_units = max(
+    -product_vega
+    / straddle_vega,
+    0
+)
+
+print(
+    f"\nProduct Vega: "
+    f"${product_vega:.2f} per vol point"
+)
+
+print(
+    f"Straddle Vega: "
+    f"${straddle_vega:.2f} per vol point"
+)
+
+print(
+    f"Straddles purchased: "
+    f"{hedge_units:.3f}"
+)
+
+print(
+    f"Initial hedge cost: "
+    f"${hedge_units * straddle_price:.2f}"
+)
+
+
+# ----------------------------------------
+# Plot 1: Contractual payoff scenarios
+# ----------------------------------------
+
+final_prices = np.linspace(
+    0,
+    1.50 * issue_spot,
+    500
+)
+
+total_coupon = (
+    notional
+    * coupon_rate
+    * maturity
+)
+
+note_payoff = np.where(
+    final_prices >= barrier_level,
+    notional + total_coupon,
+    notional
+    * final_prices
+    / issue_spot
+    + total_coupon
+)
+
+autocall_payments = (
+    notional
+    * (
+        1
+        + coupon_rate
+        * observation_times
+    )
+)
+
+autocall_styles = [
+    "--",
+    "-.",
+    ":",
+    (0, (5, 2, 1, 2))
+]
+
+plt.figure(figsize=(8, 5))
+
+plt.plot(
+    final_prices,
+    note_payoff,
+    color="blue",
+    linewidth=2.5,
+    label="Maturity payoff"
+)
+
+for time, payment, color, style in zip(
+    observation_times,
+    autocall_payments,
+    scenario_colors[:4],
+    autocall_styles
+):
+
+    plt.axhline(
+        payment,
+        color=color,
+        linestyle=style,
+        linewidth=2,
+        label=(
+            f"Autocall {time:.2f}Y: "
+            f"${payment:,.0f}"
+        )
+    )
+
+plt.axvline(
+    barrier_level,
+    color="red",
+    linestyle=":",
+    label="Downside barrier"
+)
+
+plt.axvline(
+    autocall_level,
+    color="black",
+    linestyle="--",
+    label="Autocall level"
+)
+
+plt.xlabel("GOOG final stock price")
+plt.ylabel("Investor payoff ($)")
+plt.title(
+    "GOOG Autocallable Note Payoff Scenarios"
+)
+plt.legend(fontsize=8)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------
+# Plot 2: Scenario probabilities
+# ----------------------------------------
+
+plt.figure(figsize=(8, 5))
+
+bars = plt.bar(
+    scenario_names,
+    scenario_probabilities * 100,
+    color=scenario_colors
+)
+
+for bar, probability in zip(
+    bars,
+    scenario_probabilities
+):
+
+    plt.text(
+        bar.get_x()
+        + bar.get_width() / 2,
+        bar.get_height() + 0.25,
+        f"{probability:.1%}",
+        ha="center"
+    )
+
+plt.ylabel("Probability (%)")
+plt.title(
+    "Autocallable Note Scenario Probabilities"
+)
+plt.xticks(rotation=30, ha="right")
+plt.grid(axis="y")
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------
+# Plot 3: Weekly fair-value history
+# ----------------------------------------
+
+plt.figure(figsize=(8, 5))
+
+plt.plot(
+    weekly.index,
+    weekly["Product Fair Value"],
+    color="purple",
+    linewidth=2
+)
+
+plt.axhline(
+    notional,
+    color="black",
+    linestyle="--",
+    label="Notional value"
+)
+
+plt.xlabel("Date")
+plt.ylabel("Estimated fair value ($)")
+plt.title(
+    "Weekly GOOG Autocallable Note Fair Value\n"
+    "Fresh One-Year Note Repriced Weekly"
+)
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------
+# Plot 4: Economic-index correlations
+# ----------------------------------------
+
+correlation_colors = [
+    "red" if value < 0
+    else "steelblue"
+    for value in correlations
+]
+
+plt.figure(figsize=(8, 5))
+
+bars = plt.barh(
+    correlations.index,
+    correlations.values,
+    color=correlation_colors
+)
+
+plt.axvline(
+    0,
+    color="black",
+    linewidth=1
+)
+
+for bar, value in zip(
+    bars,
+    correlations.values
+):
+
+    plt.text(
+        value + (
+            0.015
+            if value >= 0
+            else -0.015
+        ),
+        bar.get_y()
+        + bar.get_height() / 2,
+        f"{value:.2f}",
+        va="center",
+        ha=(
+            "left"
+            if value >= 0
+            else "right"
+        )
+    )
+
+plt.xlim(-1, 1)
+plt.xlabel(
+    "Correlation with product-value changes"
+)
+plt.title(
+    "GOOG Autocallable Note Correlation\n"
+    "with Economic Indicators, 4-Year Sample"
+)
+plt.grid(axis="x")
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------
+# Plot 5: Greek sensitivities
+# ----------------------------------------
+
+fig, axes = plt.subplots(
+    2,
+    2,
+    figsize=(8, 5)
+)
+
+greek_data = [
+    (
+        deltas,
+        "Delta",
+        "Value change per $1"
+    ),
+    (
+        gammas,
+        "Gamma",
+        "Change in Delta"
+    ),
+    (
+        vegas,
+        "Vega",
+        "Value change per 1 vol point"
+    ),
+    (
+        rhos,
+        "Rho",
+        "Value change per 1 bp"
+    )
+]
+
+for axis, (
+    values,
+    title,
+    ylabel
+) in zip(
+    axes.flat,
+    greek_data
+):
+
+    axis.plot(
+        spot_grid,
+        values,
+        linewidth=2
+    )
+
+    axis.axvline(
+        barrier_level,
+        color="red",
+        linestyle=":"
+    )
+
+    axis.axvline(
+        autocall_level,
+        color="black",
+        linestyle="--"
+    )
+
+    axis.axhline(
+        0,
+        color="grey",
+        linewidth=0.8
+    )
+
+    axis.set_title(title)
+    axis.set_xlabel("GOOG spot price")
+    axis.set_ylabel(ylabel)
+    axis.grid(True)
+
+axes[0, 0].legend([
+    "Greek",
+    "Barrier",
+    "Autocall level"
+], fontsize=7)
+
+plt.suptitle(
+    "GOOG Autocallable Note Greek Sensitivities"
+)
+plt.tight_layout()
+plt.show()
+
+
+# ----------------------------------------
+# Plot 6: Vega-hedged payoff
+# ----------------------------------------
+
+straddle_payoff = np.abs(
+    final_prices - K
+)
+
+hedged_payoff = (
+    note_payoff
+    + hedge_units
+    * straddle_payoff
+    - hedge_units
+    * straddle_price
+    * np.exp(
+        risk_free_rate * T
+    )
+)
+
+plt.figure(figsize=(8, 5))
+
+plt.plot(
+    final_prices,
+    note_payoff,
+    linewidth=2,
+    label="Unhedged note payoff"
+)
+
+plt.plot(
+    final_prices,
+    hedged_payoff,
+    linewidth=2,
+    label="Vega-hedged payoff"
+)
+
+plt.axvline(
+    barrier_level,
+    color="red",
+    linestyle=":",
+    label="Downside barrier"
+)
+
+plt.axvline(
+    autocall_level,
+    color="black",
+    linestyle="--",
+    label="Autocall level / ATM strike"
+)
+
+plt.xlabel("GOOG final stock price")
+plt.ylabel("Payoff after hedge cost ($)")
+plt.title(
+    "GOOG Autocallable Note with Vega Hedge"
+)
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
